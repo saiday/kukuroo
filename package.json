@@ -1,0 +1,22 @@
+{
+  "name": "kukuroo",
+  "version": "0.0.0",
+  "description": "Send Web Push notifications to your own devices from anything. Cloudflare Worker + KV, Declarative Web Push, no third-party service.",
+  "type": "module",
+  "license": "UNLICENSED",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src",
+    "README.md"
+  ],
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260101.0",
+    "typescript": "^5.9.3"
+  },
+  "scripts": {
+    "test": "node --experimental-strip-types --no-warnings test/crypto.test.mjs",
+    "typecheck": "tsc --noEmit"
+  }
+}
