@@ -210,13 +210,30 @@ sharper for everyone else.
 
 ---
 
-## Open, pending research
+## The thing that most undermines the pitch
 
-- How the landscape actually looks: ntfy, Gotify, Pushover, Bark, Apprise, and
-  whether anything already does self-hosted Web Push to an iOS Home Screen web
-  app. The differentiator paragraph should name the nearest neighbour and the
-  specific difference, rather than gesturing at a gap.
+**A custom domain on Cloudflare is currently mandatory**, because the origin
+permanence rule bans `*.workers.dev`. That quietly turns "no app, no developer
+account, no service" into "...but you need a domain, on Cloudflare, first",
+which for some readers is a bigger ask than an Apple Developer account.
+
+The ban may be stronger than the evidence supports. The genuinely ephemeral
+thing is a **preview URL**, which is per-version. A `worker-name.subdomain.workers.dev`
+address is stable indefinitely unless the Worker is renamed or the account
+subdomain changes, and both are things a warning can prevent.
+
+Unresolved, and worth resolving before launch, because it decides how large the
+addressable audience is: either support workers.dev as a second-class origin
+with `preview_urls: false` mandatory and a loud never-rename-this-Worker note,
+or keep the ban and say plainly on the landing page that a domain is required.
+What it must not do is stay implicit.
+
+## Still open
+
+- The measured fan-out CPU number, for the free-tier claim.
 - Whether "gateway" is the right word. It implies other systems point at it,
   which the bearer-gated endpoint supports, but the install experience has been
-  exercised by exactly one person so far.
-- The measured fan-out CPU number.
+  exercised by exactly one person so far, who wrote it.
+- Whether ntfy emits Declarative Web Push specifically. Confirmed it has Web Push
+  plus PWA plus iOS Home Screen install; found no evidence either way on the
+  `web_push: 8030` envelope. Do not claim it does not until someone checks.
