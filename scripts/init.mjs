@@ -11,9 +11,15 @@
 //
 // So: generate all of it here, at the start, and keep a copy the operator owns.
 //
-//   node scripts/init.mjs                    first-time setup
-//   node scripts/init.mjs --rotate send-token
-//   node scripts/init.mjs --rotate invite-code
+//   npx kukuroo init                  first-time setup
+//   npx kukuroo rotate send-token
+//   npx kukuroo rotate invite-code
+//
+// The bin is named after the package, not after the command. `npx <name>`
+// resolves <name> as a *package*, so a bin called `kukuroo-init` inside package
+// `kukuroo` is only reachable as `npx --package kukuroo kukuroo-init`, and a
+// README that says `npx kukuroo-init` is telling people to install a package
+// that does not exist.
 //
 // There is deliberately no rotate for the VAPID keypair. See refuseVapidRotation.
 
@@ -54,9 +60,20 @@ async function generateVapidKeypair() {
 
 const randomToken = () => b64url(crypto.getRandomValues(new Uint8Array(32)));
 
-/** Six words is plenty when enrolment is one device, once, by hand. */
+/**
+ * Somebody types this on a phone keyboard, once. So: no mixed case, and no
+ * characters that argue with each other in a sans-serif font. Crockford's
+ * alphabet minus the vowels, which also means it cannot accidentally spell
+ * anything. 10 characters of a 27-symbol alphabet is a little over 47 bits,
+ * which is far more than enough for a code that gates one manual enrolment.
+ */
+const INVITE_ALPHABET = "23456789bcdfghjkmnpqrstvwxyz";
 const randomInviteCode = () =>
-  b64url(crypto.getRandomValues(new Uint8Array(9))).replace(/[-_]/g, "").slice(0, 10);
+  Array.from(crypto.getRandomValues(new Uint8Array(10)))
+    // Modulo bias over a 28-symbol alphabet is negligible here and the
+    // alternative is rejection sampling for no security benefit.
+    .map((byte) => INVITE_ALPHABET[byte % INVITE_ALPHABET.length])
+    .join("");
 
 // ---------------------------------------------------------------------------
 
@@ -142,10 +159,10 @@ function refuseVapidRotation() {
 async function rotate(what) {
   if (what === "vapid" || what === "vapid-keypair") refuseVapidRotation();
   if (what !== "send-token" && what !== "invite-code") {
-    die(`--rotate takes send-token or invite-code; got ${JSON.stringify(what)}`);
+    die(`rotate takes send-token or invite-code; got ${JSON.stringify(what)}`);
   }
   if (!existsSync(CREDENTIALS_PATH)) {
-    die(`No ${CREDENTIALS_PATH}. Run without --rotate to do first-time setup.`);
+    die(`No ${CREDENTIALS_PATH}. Run \`npx kukuroo init\` to do first-time setup.`);
   }
 
   const credentials = JSON.parse(readFileSync(CREDENTIALS_PATH, "utf8"));
@@ -169,8 +186,8 @@ async function firstTimeSetup() {
     die(
       `${CREDENTIALS_PATH} already exists.\n\n` +
         "Refusing to overwrite it. If you are trying to replace a rotatable secret, use\n" +
-        "  node scripts/init.mjs --rotate send-token\n" +
-        "  node scripts/init.mjs --rotate invite-code",
+        "  npx kukuroo rotate send-token\n" +
+        "  npx kukuroo rotate invite-code",
     );
   }
 
@@ -237,5 +254,24 @@ invite code can be rotated any time with --rotate, and nothing re-enrols.
 `);
 }
 
-const rotateAt = process.argv.indexOf("--rotate");
-await (rotateAt === -1 ? firstTimeSetup() : rotate(process.argv[rotateAt + 1]));
+const USAGE = `kukuroo <command>
+
+  init                    generate every secret and install it into the Worker
+  rotate send-token       replace the send token
+  rotate invite-code      replace the invite code
+
+Only the VAPID keypair is permanent; there is no rotate for it.`;
+
+const [command, argument] = process.argv.slice(2);
+
+switch (command) {
+  case undefined:
+  case "init":
+    await firstTimeSetup();
+    break;
+  case "rotate":
+    await rotate(argument);
+    break;
+  default:
+    die(`Unknown command ${JSON.stringify(command)}.\n\n${USAGE}`);
+}

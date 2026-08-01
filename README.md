@@ -8,8 +8,10 @@ TypeScript, Declarative Web Push, no third-party service.
 
 You keep the keys. Nothing about your notifications passes through anyone else.
 
-**Status: early.** The surface described below is what is being built. The code is
-not here yet. The two permanence rules are here first because they are the two
+**Status: early.** The code works and is tested end to end against a real iPhone,
+but it has been installed by exactly one person, who wrote it. Setup is rougher
+than it should be and there is no scaffold yet, so expect to write a wrangler
+config by hand. The two permanence rules are first because they are the two
 mistakes that cannot be undone, and people hit them before they write any code.
 
 ---
@@ -62,20 +64,52 @@ Do not put the private key on the machine that sends notifications. It calls
 
 ## Setup
 
-The order is the point. Steps 1 through 4 happen before any device is touched.
+The order is the point. Everything up to step 5 happens before any device is
+touched.
 
-**1. Choose the origin and attach it.**
-Pick the hostname you will still be using in three years. Add it as a Worker
-Custom Domain. Set `workers_dev` and `preview_urls` to `false`. Confirm it serves:
+**1. Decide the origin, and write the config.**
+Pick the hostname you will still be using in three years. The zone has to already
+be on Cloudflare. Nothing is attached yet; this is the decision, and it is the one
+that cannot be taken back once a device is enrolled.
 
-```sh
-curl -sI https://push.example.com    # expect: HTTP/2 200
+```jsonc
+// wrangler.jsonc
+{
+  "name": "kukuroo",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-03-17",
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [{ "pattern": "push.example.com", "custom_domain": true }],
+  "kv_namespaces": [{ "binding": "KUKUROO_SUBS" }]
+}
 ```
+
+Leaving `kv_namespaces[].id` out lets wrangler provision the namespace on first
+deploy. The binding **must** be named `KUKUROO_SUBS`.
+
+Standalone deployments need an entrypoint, which is four lines:
+
+```ts
+// src/worker.ts
+import { mountKukuroo, type KukurooEnv } from "kukuroo";
+
+const kukuroo = mountKukuroo({ prefix: "/push", standalone: true });
+
+export default {
+  async fetch(request: Request, env: KukurooEnv): Promise<Response> {
+    return (await kukuroo.handle(request, env)) ?? new Response("Not found", { status: 404 });
+  },
+};
+```
+
+`standalone: true` is what serves the bundled enrolment page at `/push/enroll`.
+Leave it off when you are mounting into a Worker that has its own enrolment UI.
 
 **2. Generate every secret, once, in one command.**
 
 ```sh
-npx kukuroo-init
+npx kukuroo init
 ```
 
 This generates the VAPID keypair, a send token, and an invite code; installs the
@@ -97,7 +131,23 @@ Cloudflare, and write them down first. The trap is generating a send token,
 piping it straight into `wrangler secret put`, and discovering at first send that
 there is no way to read it back.
 
-**3. Deploy.**
+Run this **before** the first deploy if you like; `wrangler secret put` creates a
+draft Worker on demand.
+
+**3. Paste the printed public key into `wrangler.jsonc`, then deploy.**
+
+```jsonc
+"vars": { "KUKUROO_VAPID_PUBLIC": "B..." }
+```
+
+```sh
+npx wrangler deploy
+curl -sI https://push.example.com    # expect: HTTP/2 200
+```
+
+The deploy is what attaches the custom domain and provisions the KV namespace.
+Give it a couple of minutes: for two to three minutes afterwards the origin
+serves a mix of old and new versions, and newly added static assets 404.
 
 **4. Put the send token where your sender can read it.**
 
@@ -122,15 +172,15 @@ Only the VAPID keypair is permanent. The other two are not bound to anything and
 can be replaced whenever you like, with no device re-enrolling:
 
 ```sh
-npx kukuroo-init --rotate send-token
-npx kukuroo-init --rotate invite-code
+npx kukuroo rotate send-token
+npx kukuroo rotate invite-code
 ```
 
 Both require `kukuroo.credentials.json`. If you set your deployment up by hand
 and have no such file, rotate with `wrangler secret put` directly and start
 keeping the value somewhere yourself.
 
-There is no `--rotate` for the VAPID keypair, on purpose. Asking for one prints
+There is no rotate for the VAPID keypair, on purpose. Asking for one prints
 an explanation rather than doing it.
 
 ---
@@ -179,9 +229,53 @@ interface KukurooEnv {
   KUKUROO_INVITE_CODE:   string   // Worker Secret
 }
 
-mountKukuroo(env, { prefix: "/push" })
-send(env, { topic, notification })
+// `env` is supplied per request, not at construction, because that is how
+// Workers hand it to you.
+const kukuroo = mountKukuroo({ prefix: "/push", standalone: false })
+await kukuroo.handle(request, env)   // Response, or null if the path is not ours
 ```
+
+`KUKUROO_VAPID_SUBJECT` is optional: the VAPID `sub` claim, a `mailto:` or
+`https:` URI. It defaults to the push service's own origin, which is accepted but
+identifies nobody.
+
+### Sending
+
+```ts
+import { send } from "kukuroo";
+
+const result = await send(env, {
+  notification: {
+    title: "Deploy finished",
+    body: "main → production, 42s",
+    navigate: "https://push.example.com/deploys",  // required, and absolute
+    tag: "deploys",                                 // replaces its predecessor
+  },
+  appBadge: 1,
+});
+
+// { delivered: 1, removed: 0, failures: [] }
+if (result.delivered === 0) throw new Error("no devices are enrolled");
+```
+
+Or over HTTP, from anything at all:
+
+```sh
+curl -X POST https://push.example.com/push/send \
+  -H "authorization: Bearer $(cat ~/.kukuroo-send-token)" \
+  -H 'content-type: application/json' \
+  -d '{"notification":{"title":"hello","navigate":"https://push.example.com/"}}'
+```
+
+`navigate` is **required and must be absolute**; so is a non-empty `title`. An
+`icon`, if present, must be a valid absolute URL. Get any of those wrong and
+WebKit discards the entire message with no error anywhere, so Kukuroo rejects
+them before sending rather than letting the failure be silent.
+
+`delivered` counts subscriptions the push service *accepted* the message for.
+That is not "displayed on the phone", and nothing in the protocol reports the
+latter. **A `delivered` of 0 is a failure, not a quiet success** — it is the only
+signal you get that nothing is enrolled.
 
 **Mounted** into an existing Worker, the host serves its own enrolment UI and
 posts to `/push/subscribe`. This is the recommended shape: same origin as the app

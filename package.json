@@ -17,11 +17,14 @@
     "typescript": "^5.9.3"
   },
   "scripts": {
-    "init": "node scripts/init.mjs",
+    "init": "node scripts/init.mjs init",
     "test": "node --experimental-strip-types --no-warnings test/crypto.test.mjs",
     "typecheck": "tsc --noEmit"
   },
   "bin": {
-    "kukuroo-init": "scripts/init.mjs"
+    "kukuroo": "scripts/init.mjs"
+  },
+  "engines": {
+    "node": ">=22.6"
   }
 }

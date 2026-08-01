@@ -38,8 +38,12 @@ const DEFAULT_TTL_SECONDS = 4 * 60 * 60;
 
 /**
  * `sub` in the VAPID token must be a mailto: or https: URI. Apple rejects the
- * token without one and the 400 does not say why, so we default to the
- * deployment's own origin rather than leaving it unset.
+ * token without one and the 400 does not say why, so it is never left unset.
+ *
+ * The fallback is the *push service's* own origin, which is a valid https URI
+ * and is accepted, but it identifies nobody. Set KUKUROO_VAPID_SUBJECT to a
+ * mailto: you actually read if you want a push service to be able to reach you
+ * about your traffic.
  */
 function vapidSubject(env: KukurooEnv, endpoint: string): string {
   if (env.KUKUROO_VAPID_SUBJECT) return env.KUKUROO_VAPID_SUBJECT;

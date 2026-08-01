@@ -50,6 +50,22 @@ function secretEquals(a: string, b: string): boolean {
   return diff === 0;
 }
 
+/**
+ * A binding that was never configured arrives as `undefined`, and comparing
+ * against it throws rather than returning false. That surfaces as an opaque 500
+ * on every enrolment attempt, which reads as "the service is broken" instead of
+ * "you skipped a setup step". Given how many manual steps stand between a fresh
+ * account and a working deployment, this is likely rather than hypothetical.
+ */
+function requireSecret(value: string | undefined, name: string): string | Response {
+  if (typeof value === "string" && value.length > 0) return value;
+  console.error(`kukuroo: ${name} is not set on this Worker.`);
+  return json(
+    { error: `${name} is not configured on this Worker. Run \`npx kukuroo init\`.` },
+    503,
+  );
+}
+
 function bearerToken(request: Request): string | null {
   const header = request.headers.get("authorization");
   if (header === null) return null;
@@ -103,8 +119,11 @@ async function handleSubscribe(request: Request, env: KukurooEnv): Promise<Respo
     return json({ error: "body must be JSON" }, 400);
   }
 
+  const expected = requireSecret(env.KUKUROO_INVITE_CODE, "KUKUROO_INVITE_CODE");
+  if (expected instanceof Response) return expected;
+
   const invite = typeof body.invite === "string" ? body.invite : "";
-  if (!secretEquals(invite, env.KUKUROO_INVITE_CODE)) {
+  if (!secretEquals(invite, expected)) {
     return json({ error: "invalid invite code" }, 403);
   }
 
@@ -120,8 +139,11 @@ async function handleSubscribe(request: Request, env: KukurooEnv): Promise<Respo
 }
 
 async function handleSend(request: Request, env: KukurooEnv): Promise<Response> {
+  const expected = requireSecret(env.KUKUROO_SEND_TOKEN, "KUKUROO_SEND_TOKEN");
+  if (expected instanceof Response) return expected;
+
   const token = bearerToken(request);
-  if (token === null || !secretEquals(token, env.KUKUROO_SEND_TOKEN)) {
+  if (token === null || !secretEquals(token, expected)) {
     return json({ error: "unauthorized" }, 401);
   }
 
