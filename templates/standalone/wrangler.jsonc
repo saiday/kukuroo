@@ -1,0 +1,46 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "kukuroo",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-03-17",
+
+  // ---------------------------------------------------------------------------
+  // The origin, and why there is only one of it.
+  //
+  // A push subscription is bound to an origin. Change the origin and every
+  // subscription stops working, silently, with no error anywhere and no way to
+  // re-point them. So this decision is made once, before any device enrols.
+  //
+  // `preview_urls: false` is the one that catches people. A preview URL is a
+  // real, working, enrollable origin, and it is per-version, so a subscription
+  // created against one during a five-minute test appears to work and then never
+  // delivers again. Leave this false.
+  //
+  // `workers_dev` is a softer call. A <name>.<subdomain>.workers.dev address is
+  // stable indefinitely, so it is a legitimate origin if you do not have a
+  // domain. See the two options below; pick one and delete the other.
+  // ---------------------------------------------------------------------------
+  "preview_urls": false,
+
+  // Option A, recommended: your own hostname. The zone must already be on
+  // Cloudflare. `wrangler deploy` provisions the DNS record and the certificate.
+  "workers_dev": false,
+  "routes": [{ "pattern": "push.example.com", "custom_domain": true }],
+
+  // Option B: no domain. Delete the two lines above and uncomment this one.
+  //
+  // Then never rename this Worker and never change your account subdomain, since
+  // either one moves the origin and unenrols every device.
+  //
+  // "workers_dev": true,
+
+  // Subscriptions. The binding name is not configurable; Kukuroo looks for
+  // exactly this. Leaving out "id" lets wrangler create the namespace on the
+  // first deploy.
+  "kv_namespaces": [{ "binding": "KUKUROO_SUBS" }]
+
+  // No "vars" block is needed. The VAPID keypair is stored as a JWK in the
+  // KUKUROO_VAPID_PRIVATE secret, so the public half is derived from it and
+  // served at /push/public-key. Two values that must agree forever is a failure
+  // waiting to happen, so there is only one.
+}

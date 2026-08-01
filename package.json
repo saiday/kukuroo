@@ -1,16 +1,21 @@
 {
   "name": "kukuroo",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Send Web Push notifications to your own devices from anything. Cloudflare Worker + KV, Declarative Web Push, no third-party service.",
   "type": "module",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "exports": {
-    ".": "./src/index.ts"
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
   },
   "files": [
     "src",
     "scripts",
-    "README.md"
+    "templates",
+    "README.md",
+    "LICENSE"
   ],
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20260101.0",
@@ -26,5 +31,31 @@
   },
   "engines": {
     "node": ">=22.6"
+  },
+  "author": "Saiday",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/saiday/kukuroo.git"
+  },
+  "homepage": "https://github.com/saiday/kukuroo#readme",
+  "bugs": "https://github.com/saiday/kukuroo/issues",
+  "keywords": [
+    "web-push",
+    "push-notifications",
+    "cloudflare-workers",
+    "declarative-web-push",
+    "vapid",
+    "ios",
+    "pwa",
+    "self-hosted",
+    "serverless"
+  ],
+  "peerDependencies": {
+    "@cloudflare/workers-types": ">=4"
+  },
+  "peerDependenciesMeta": {
+    "@cloudflare/workers-types": {
+      "optional": true
+    }
   }
 }

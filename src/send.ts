@@ -10,7 +10,7 @@ import { encryptPayload } from "./encrypt.ts";
 import { buildDeclarativePayload, type BuildPayloadOptions } from "./payload.ts";
 import { utf8 } from "./bytes.ts";
 import { deleteSubscription, listSubscriptions } from "./subscriptions.ts";
-import { importVapidPrivateKey, signVapidToken } from "./vapid.ts";
+import { importVapidKeys, signVapidToken } from "./vapid.ts";
 import type { KukurooEnv } from "./env.ts";
 
 export interface SendOptions extends BuildPayloadOptions {
@@ -62,7 +62,7 @@ export async function send(env: KukurooEnv, options: SendOptions): Promise<SendR
 
   if (subscriptions.length === 0) return result;
 
-  const privateKey = await importVapidPrivateKey(
+  const { privateKey, publicKeyB64 } = await importVapidKeys(
     env.KUKUROO_VAPID_PRIVATE,
     env.KUKUROO_VAPID_PUBLIC,
   );
@@ -78,7 +78,7 @@ export async function send(env: KukurooEnv, options: SendOptions): Promise<SendR
       const body = await encryptPayload(plaintext, subscription.keys);
 
       const headers: Record<string, string> = {
-        Authorization: `vapid t=${token}, k=${env.KUKUROO_VAPID_PUBLIC}`,
+        Authorization: `vapid t=${token}, k=${publicKeyB64}`,
         "Content-Encoding": "aes128gcm",
         "Content-Type": "application/octet-stream",
         TTL: String(options.ttl ?? DEFAULT_TTL_SECONDS),

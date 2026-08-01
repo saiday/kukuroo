@@ -9,10 +9,10 @@ TypeScript, Declarative Web Push, no third-party service.
 You keep the keys. Nothing about your notifications passes through anyone else.
 
 **Status: early.** The code works and is tested end to end against a real iPhone,
-but it has been installed by exactly one person, who wrote it. Setup is rougher
-than it should be and there is no scaffold yet, so expect to write a wrangler
-config by hand. The two permanence rules are first because they are the two
-mistakes that cannot be undone, and people hit them before they write any code.
+but it has been installed by exactly one person, who wrote it. Expect rough
+edges, and please report them. The two permanence rules come first because they
+are the two mistakes that cannot be undone, and people hit them before they write
+any code.
 
 ---
 
@@ -32,18 +32,31 @@ subscription created against one is worthless against the other. There is no
 migration path and no way to re-point an existing subscription: every device has
 to be enrolled again by hand.
 
-So decide the final hostname **first**, attach it as a Custom Domain, and then
-shut the other doors:
+So decide the final hostname **first**, and then shut the doors you are not using.
+
+**`preview_urls: false` is not optional.** A preview URL is a real, working,
+enrollable origin, and it is *per version*. Enrol against one during a
+five-minute test and you get a subscription that appears to work and then never
+delivers anything again.
+
+**A custom domain is recommended, but `workers.dev` is supported.** If you do not
+have a domain on Cloudflare, `<worker>.<subdomain>.workers.dev` is a legitimate
+permanent origin: it is stable indefinitely. Two things move it, and both are
+under your control, so treat them as one-way doors:
+
+- **never rename the Worker**, and
+- **never change your account subdomain**.
 
 ```jsonc
-// wrangler.jsonc
-"workers_dev": false,   // no *.workers.dev address for this Worker
-"preview_urls": false   // no per-version preview address either
-```
+// wrangler.jsonc — with a domain
+"workers_dev": false,
+"preview_urls": false,
+"routes": [{ "pattern": "push.example.com", "custom_domain": true }]
 
-Those two lines matter more than they look. A preview URL is a real, working,
-enrollable origin, and enrolling against one during a five-minute test produces a
-subscription that appears to work and then never delivers anything again.
+// wrangler.jsonc — without one
+"workers_dev": true,
+"preview_urls": false
+```
 
 ### 2. Generate the VAPID keypair once, and never rotate it
 
@@ -67,44 +80,23 @@ Do not put the private key on the machine that sends notifications. It calls
 The order is the point. Everything up to step 5 happens before any device is
 touched.
 
-**1. Decide the origin, and write the config.**
-Pick the hostname you will still be using in three years. The zone has to already
-be on Cloudflare. Nothing is attached yet; this is the decision, and it is the one
-that cannot be taken back once a device is enrolled.
+**1. Copy the template and decide the origin.**
 
-```jsonc
-// wrangler.jsonc
-{
-  "name": "kukuroo",
-  "main": "src/worker.ts",
-  "compatibility_date": "2026-03-17",
-  "workers_dev": false,
-  "preview_urls": false,
-  "routes": [{ "pattern": "push.example.com", "custom_domain": true }],
-  "kv_namespaces": [{ "binding": "KUKUROO_SUBS" }]
-}
+```sh
+npm install kukuroo
+cp -r node_modules/kukuroo/templates/standalone my-kukuroo && cd my-kukuroo
+npm install
 ```
 
-Leaving `kv_namespaces[].id` out lets wrangler provision the namespace on first
-deploy. The binding **must** be named `KUKUROO_SUBS`.
+Open `wrangler.jsonc` and pick one of the two origin options it offers: your own
+hostname, or `workers.dev`. Everything else in it is already set, including the
+`KUKUROO_SUBS` KV binding, whose name is not configurable.
 
-Standalone deployments need an entrypoint, which is four lines:
+This is the decision that cannot be taken back once a device is enrolled.
 
-```ts
-// src/worker.ts
-import { mountKukuroo, type KukurooEnv } from "kukuroo";
-
-const kukuroo = mountKukuroo({ prefix: "/push", standalone: true });
-
-export default {
-  async fetch(request: Request, env: KukurooEnv): Promise<Response> {
-    return (await kukuroo.handle(request, env)) ?? new Response("Not found", { status: 404 });
-  },
-};
-```
-
-`standalone: true` is what serves the bundled enrolment page at `/push/enroll`.
-Leave it off when you are mounting into a Worker that has its own enrolment UI.
+*Mounting into a Worker you already have instead?* Skip the template. Import
+`mountKukuroo`, leave `standalone` off, add the KV binding, and serve enrolment
+from your own page. See **Surface** below.
 
 **2. Generate every secret, once, in one command.**
 
@@ -113,9 +105,12 @@ npx kukuroo init
 ```
 
 This generates the VAPID keypair, a send token, and an invite code; installs the
-three secrets into the Worker; and writes them all to `kukuroo.credentials.json`
-at mode 0600. It prints the public key to paste into your `wrangler` config and
-the invite code to type into your phone.
+three secrets into the Worker; writes them all to `kukuroo.credentials.json` at
+mode 0600; adds that file to your `.gitignore`; and prints the invite code.
+
+**Nothing to paste into `wrangler.jsonc`.** The keypair is stored as a JWK, so
+the public half is derived from it and served at `/push/public-key`. Two values
+that have to agree forever is a failure waiting to happen, so there is one.
 
 **Keep that file.** It is not a convenience, it is the only copy. A Worker Secret
 is write-only: `wrangler secret list` returns names and never values, so once the
@@ -134,11 +129,7 @@ there is no way to read it back.
 Run this **before** the first deploy if you like; `wrangler secret put` creates a
 draft Worker on demand.
 
-**3. Paste the printed public key into `wrangler.jsonc`, then deploy.**
-
-```jsonc
-"vars": { "KUKUROO_VAPID_PUBLIC": "B..." }
-```
+**3. Deploy.**
 
 ```sh
 npx wrangler deploy
@@ -215,18 +206,19 @@ an explanation rather than doing it.
 ## Surface
 
 ```
-POST /push/send       bearer token   RFC 8291 aes128gcm + VAPID ES256, fans out
-POST /push/subscribe  invite-gated   stores the subscription in KV
-GET  /push/enroll     the enrolment page (standalone mode)
+POST /push/send        bearer token   RFC 8291 aes128gcm + VAPID ES256, fans out
+POST /push/subscribe   invite-gated   stores the subscription in KV
+GET  /push/public-key  open           the VAPID public key, for the client
+GET  /push/enroll      open           the bundled enrolment page (standalone only)
 ```
 
 ```ts
 interface KukurooEnv {
   KUKUROO_SUBS:          KVNamespace
-  KUKUROO_VAPID_PRIVATE: string   // Worker Secret
-  KUKUROO_VAPID_PUBLIC:  string
+  KUKUROO_VAPID_PRIVATE: string   // Worker Secret. A JWK; see below
   KUKUROO_SEND_TOKEN:    string   // Worker Secret
   KUKUROO_INVITE_CODE:   string   // Worker Secret
+  KUKUROO_VAPID_PUBLIC?: string   // only if the key is a bare 32-byte scalar
 }
 
 // `env` is supplied per request, not at construction, because that is how
@@ -289,4 +281,4 @@ a pure notification sink.
 
 ## Licence
 
-Not yet chosen. Until one is added, default copyright applies.
+MIT. See [LICENSE](LICENSE).

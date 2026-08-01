@@ -210,23 +210,23 @@ sharper for everyone else.
 
 ---
 
-## The thing that most undermines the pitch
+## No domain required, and say so
 
-**A custom domain on Cloudflare is currently mandatory**, because the origin
-permanence rule bans `*.workers.dev`. That quietly turns "no app, no developer
-account, no service" into "...but you need a domain, on Cloudflare, first",
-which for some readers is a bigger ask than an Apple Developer account.
+**Resolved 2026-08-02: `workers.dev` is supported as a second-class origin.**
 
-The ban may be stronger than the evidence supports. The genuinely ephemeral
-thing is a **preview URL**, which is per-version. A `worker-name.subdomain.workers.dev`
-address is stable indefinitely unless the Worker is renamed or the account
-subdomain changes, and both are things a warning can prevent.
+The earlier ban made a Cloudflare-hosted domain mandatory, which quietly turned
+"no app, no developer account, no service" into "...but first, a domain" — for
+some readers a bigger ask than an Apple Developer account is.
 
-Unresolved, and worth resolving before launch, because it decides how large the
-addressable audience is: either support workers.dev as a second-class origin
-with `preview_urls: false` mandatory and a loud never-rename-this-Worker note,
-or keep the ban and say plainly on the landing page that a domain is required.
-What it must not do is stay implicit.
+The ban was stronger than the evidence supported. The genuinely ephemeral thing
+is a **preview URL**, which is per-version and stays forbidden. A
+`<worker>.<subdomain>.workers.dev` address is stable indefinitely; the only two
+things that move it are renaming the Worker and changing the account subdomain,
+both under the operator's control and both preventable with a warning.
+
+**Landing page consequence:** the zero-prerequisites path is real and should be
+shown first. *"You need a Cloudflare account. That's the list."* A custom domain
+is the recommendation, not the entry fee.
 
 ## Still open
 

@@ -51,10 +51,15 @@ async function generateVapidKeypair() {
   ]);
   const jwk = await crypto.subtle.exportKey("jwk", pair.privateKey);
   return {
+    // Recorded for the operator's reference and for interoperability with tools
+    // that want the raw point. Kukuroo derives it from the key below and does
+    // not need it configured.
     vapidPublicKey: b64url(await crypto.subtle.exportKey("raw", pair.publicKey)),
-    // The 32-byte scalar, which is the interchange format the rest of the
-    // ecosystem uses. src/vapid.ts also accepts a JWK or PKCS#8.
-    vapidPrivateKey: jwk.d,
+    // Stored as a JWK rather than the bare 32-byte scalar, because a JWK carries
+    // `x` and `y` too. That means the deployment has one VAPID value instead of
+    // two, and two values that must agree forever is a failure waiting to
+    // happen: a mismatched pair sends cleanly and delivers nothing.
+    vapidPrivateKey: JSON.stringify({ kty: "EC", crv: "P-256", d: jwk.d, x: jwk.x, y: jwk.y }),
   };
 }
 
@@ -137,9 +142,44 @@ function putSecret(name, value) {
   console.log(`  set ${name}`);
 }
 
+/**
+ * Make sure the credentials file cannot be committed.
+ *
+ * It holds a private key that can never be rotated, and it is written into
+ * whatever directory the operator happened to run this from, which is usually a
+ * git repository. "Pushed my VAPID private key to GitHub on the first day" is a
+ * very achievable outcome, and a printed warning is not a control: people skim
+ * printed warnings. So do it for them.
+ */
+function ensureGitignored() {
+  const name = "kukuroo.credentials.json";
+  try {
+    execFileSync("git", ["rev-parse", "--is-inside-work-tree"], { stdio: "ignore" });
+  } catch {
+    return; // Not a repository. Nothing to protect against.
+  }
+
+  try {
+    execFileSync("git", ["check-ignore", "-q", name], { stdio: "ignore" });
+    return; // Already ignored.
+  } catch {
+    // Not ignored; fall through and fix it.
+  }
+
+  const gitignore = resolve(process.cwd(), ".gitignore");
+  const existing = existsSync(gitignore) ? readFileSync(gitignore, "utf8") : "";
+  const separator = existing === "" || existing.endsWith("\n") ? "" : "\n";
+  writeFileSync(
+    gitignore,
+    `${existing}${separator}\n# Kukuroo: holds a VAPID private key that can never be rotated.\n${name}\n`,
+  );
+  console.log(`  added ${name} to .gitignore`);
+}
+
 function writeCredentials(credentials) {
   writeFileSync(CREDENTIALS_PATH, JSON.stringify(credentials, null, 2) + "\n", { mode: 0o600 });
   console.log(`  wrote ${CREDENTIALS_PATH} (0600)`);
+  ensureGitignored();
 }
 
 function refuseVapidRotation() {
@@ -225,21 +265,17 @@ async function firstTimeSetup() {
   writeCredentials(credentials);
 
   console.log(`
-Done. Three things left, in this order.
+Done. Two things left.
 
-1. Put the public key in your wrangler config. It is a plain var, not a secret:
-   the enrolment page needs it client-side.
-
-     "vars": { "KUKUROO_VAPID_PUBLIC": "${credentials.vapidPublicKey}" }
-
-2. Back up kukuroo.credentials.json somewhere you will still have in three years.
+1. Back up kukuroo.credentials.json somewhere you will still have in three years.
    A password manager entry is enough. The VAPID private key in that file cannot
    be recovered from Cloudflare: secrets are write-only. Losing it means
    re-enrolling every device by hand.
 
-   Add it to .gitignore if it is not already.
+   Nothing to paste into wrangler.jsonc. The key is stored as a JWK, so the
+   public half is derived from it and served at <prefix>/public-key.
 
-3. Your invite code, for the enrolment page:
+2. Your invite code, for the enrolment page:
 
      ${credentials.inviteCode}
 

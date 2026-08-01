@@ -11,6 +11,7 @@
  * silence is exactly what this module exists to make impossible.
  */
 
+export { importVapidKeys, type VapidKeys } from "./vapid.ts";
 export { mountKukuroo, type KukurooRoutes, type MountOptions } from "./mount.ts";
 export { send, type SendOptions, type SendResult } from "./send.ts";
 export {

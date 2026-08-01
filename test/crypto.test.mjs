@@ -2,7 +2,7 @@
 // Web Crypto, playing the part of the user agent. If this fails, the phone
 // would have shown nothing and said nothing.
 import { encryptPayload } from "../src/encrypt.ts";
-import { importVapidPrivateKey, signVapidToken } from "../src/vapid.ts";
+import { importVapidKeys, signVapidToken } from "../src/vapid.ts";
 import { buildDeclarativePayload } from "../src/payload.ts";
 import { b64urlEncode, b64urlDecode, concat, utf8 } from "../src/bytes.ts";
 
@@ -63,7 +63,7 @@ for (const [label, material] of [
   ["JWK json", JSON.stringify(vapidJwk)],
   ["pkcs8", b64urlEncode(new Uint8Array(await crypto.subtle.exportKey("pkcs8", vapid.privateKey)))],
 ]) {
-  const key = await importVapidPrivateKey(material, vapidPublic);
+  const { privateKey: key } = await importVapidKeys(material, vapidPublic);
   const token = await signVapidToken(key, "https://web.push.apple.com", "https://push.example.com");
   const [h, p, s] = token.split(".");
   const verified = await crypto.subtle.verify(
@@ -74,11 +74,28 @@ for (const [label, material] of [
   ok(`VAPID aud is the endpoint origin (${label})`, claims.aud === "https://web.push.apple.com");
 }
 
+// ---- deriving the public key, so it need not be configured -----------------
+for (const [label, material] of [
+  ["JWK", JSON.stringify(vapidJwk)],
+  ["pkcs8", b64urlEncode(new Uint8Array(await crypto.subtle.exportKey("pkcs8", vapid.privateKey)))],
+]) {
+  const derived = await importVapidKeys(material);
+  ok(`public key derived from ${label} with nothing configured`, derived.publicKeyB64 === vapidPublic);
+}
+
+let scalarThrew = false;
+try {
+  await importVapidKeys(b64urlEncode(b64urlDecode(vapidJwk.d)));
+} catch {
+  scalarThrew = true;
+}
+ok("bare scalar with no public key is rejected, not guessed at", scalarThrew);
+
 // ---- the mismatch guard ----------------------------------------------------
 const other = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign"]);
 const otherJwk = await crypto.subtle.exportKey("jwk", other.privateKey);
 let threw = false;
-try { await importVapidPrivateKey(JSON.stringify(otherJwk), vapidPublic); } catch { threw = true; }
+try { await importVapidKeys(JSON.stringify(otherJwk), vapidPublic); } catch { threw = true; }
 ok("mismatched keypair is rejected loudly", threw);
 
 // ---- the validators --------------------------------------------------------

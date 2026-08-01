@@ -13,13 +13,21 @@
 export interface EnrolmentPageOptions {
   /** Where the page posts the subscription. */
   subscribePath: string;
-  /** base64url VAPID public key, needed client-side by `subscribe()`. */
-  vapidPublicKey: string;
+  /** Where the page fetches the VAPID public key `subscribe()` needs. */
+  publicKeyPath: string;
   title?: string;
 }
 
+/** Kept out of the HTML so an operator-supplied title cannot close a tag. */
+function escapeHtml(value: string): string {
+  return value.replace(
+    /[&<>"']/g,
+    (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!,
+  );
+}
+
 export function enrolmentPage(options: EnrolmentPageOptions): string {
-  const title = options.title ?? "Enrol this device";
+  const title = escapeHtml(options.title ?? "Enrol this device");
   return `<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -54,8 +62,9 @@ export function enrolmentPage(options: EnrolmentPageOptions): string {
 <div id="status"></div>
 
 <script type="module">
-const VAPID_PUBLIC = ${JSON.stringify(options.vapidPublicKey)};
-const SUBSCRIBE_PATH = ${JSON.stringify(options.subscribePath)};
+// JSON.stringify does not escape "</script>", so the closing bracket is split.
+const SUBSCRIBE_PATH = ${JSON.stringify(options.subscribePath).replace(/</g, "\\u003c")};
+const PUBLIC_KEY_PATH = ${JSON.stringify(options.publicKeyPath).replace(/</g, "\\u003c")};
 
 const gate = document.getElementById("gate");
 const form = document.getElementById("form");
@@ -95,9 +104,13 @@ form.addEventListener("submit", async (event) => {
     const permission = await Notification.requestPermission();
     if (permission !== "granted") throw new Error("Notification permission was " + permission);
 
+    const keyResponse = await fetch(PUBLIC_KEY_PATH);
+    if (!keyResponse.ok) throw new Error("could not read the server's VAPID public key");
+    const { publicKey } = await keyResponse.json();
+
     const subscription = await window.pushManager.subscribe({
       userVisibleOnly: true,
-      applicationServerKey: b64urlToBytes(VAPID_PUBLIC),
+      applicationServerKey: b64urlToBytes(publicKey),
     });
 
     const response = await fetch(SUBSCRIBE_PATH, {

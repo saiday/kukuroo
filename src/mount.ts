@@ -13,6 +13,7 @@ import { enrolmentPage } from "./enroll-page.ts";
 import type { KukurooEnv } from "./env.ts";
 import { send, type SendOptions } from "./send.ts";
 import { parseSubscriptionBody, putSubscription } from "./subscriptions.ts";
+import { importVapidKeys } from "./vapid.ts";
 
 export interface MountOptions {
   /** Where the route set lives. No trailing slash. */
@@ -89,11 +90,27 @@ export function mountKukuroo(options: MountOptions = {}): KukurooRoutes {
         if (options.standalone !== true) return null;
         const page = enrolmentPage({
           subscribePath: prefix + "/subscribe",
-          vapidPublicKey: env.KUKUROO_VAPID_PUBLIC,
+          publicKeyPath: prefix + "/public-key",
         });
         return new Response(page, {
           headers: { "content-type": "text/html; charset=utf-8" },
         });
+      }
+
+      // Public by nature: the client needs it to call `pushManager.subscribe()`.
+      // Serving it means a deployment has one VAPID value to configure instead
+      // of two, which removes the only way they can disagree.
+      if (route === "/public-key" && request.method === "GET") {
+        try {
+          const { publicKeyB64 } = await importVapidKeys(
+            env.KUKUROO_VAPID_PRIVATE,
+            env.KUKUROO_VAPID_PUBLIC,
+          );
+          return json({ publicKey: publicKeyB64 });
+        } catch (error) {
+          console.error("kukuroo: VAPID key is not usable:", error);
+          return json({ error: "the VAPID key on this Worker is not usable" }, 503);
+        }
       }
 
       if (route === "/subscribe") {

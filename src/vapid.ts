@@ -10,61 +10,59 @@
  * matching, and every send is accepted-then-dropped for the rest of time.
  */
 
-import { b64urlDecode, b64urlEncode, utf8 } from "./bytes.ts";
+import { b64urlDecode, b64urlEncode, concat, utf8 } from "./bytes.ts";
+
+export interface VapidKeys {
+  privateKey: CryptoKey;
+  /** base64url uncompressed P-256 point, for the `k=` parameter and the client. */
+  publicKeyB64: string;
+}
 
 /**
- * Import the configured private key and check it against the configured public
- * key.
+ * Import the VAPID keypair from whatever the operator stored.
  *
  * Three encodings are accepted, because "which format is the VAPID private key
  * in" has no single answer across the tools people generate one with:
  *
- *   - base64url of the 32-byte scalar `d`, which is what the `web-push` family
- *     of tools emits, and needs `x`/`y` supplied from the public key;
- *   - a JWK, as JSON;
- *   - PKCS#8 DER, base64 or base64url encoded.
+ *   - a JWK, as JSON. **Preferred**, because a JWK carries `x` and `y`, so the
+ *     public key is derivable and does not have to be configured separately.
+ *   - PKCS#8 DER, base64 or base64url encoded. Also self-describing.
+ *   - base64url of the bare 32-byte scalar `d`, which is what the `web-push`
+ *     family of tools emits. This one carries no public half, so it is the only
+ *     case where `KUKUROO_VAPID_PUBLIC` must also be set.
  *
- * The mismatch check at the end is not decoration. A public var and a private
- * secret drawn from two different keypairs is a configuration that deploys
- * cleanly, sends cleanly, returns 201 cleanly, and delivers nothing ever. It is
- * indistinguishable from the rotation failure the README warns about, and it is
- * far easier to do by accident.
+ * When a public key *is* supplied, it is checked against the private one rather
+ * than trusted. That check is not decoration: a public var and a private secret
+ * drawn from two different keypairs is a configuration that deploys cleanly,
+ * sends cleanly, returns 201 cleanly, and delivers nothing ever. It is
+ * indistinguishable from the rotation failure the README warns about, and far
+ * easier to do by accident.
+ *
+ * Supplying no public key at all is better still, because then the two cannot
+ * disagree.
  */
-export async function importVapidPrivateKey(
+export async function importVapidKeys(
   privateKeyMaterial: string,
-  publicKeyB64: string,
-): Promise<CryptoKey> {
-  const pub = b64urlDecode(publicKeyB64);
-  if (pub.length !== 65 || pub[0] !== 0x04) {
-    throw new Error(
-      `KUKUROO_VAPID_PUBLIC must be the base64url uncompressed P-256 point ` +
-        `(65 bytes starting 0x04); got ${pub.length} bytes.`,
-    );
-  }
-  const pubX = b64urlEncode(pub.slice(1, 33));
-  const pubY = b64urlEncode(pub.slice(33, 65));
-
+  publicKeyB64?: string,
+): Promise<VapidKeys> {
   const material = privateKeyMaterial.trim();
   let key: CryptoKey;
 
   if (material.startsWith("{")) {
-    key = await crypto.subtle.importKey(
-      "jwk",
-      JSON.parse(material) as JsonWebKey,
-      { name: "ECDSA", namedCurve: "P-256" },
-      true,
-      ["sign"],
-    );
+    key = await importJwk(JSON.parse(material) as JsonWebKey);
   } else {
     const raw = b64urlDecode(material.replace(/-----[^-]+-----/g, "").replace(/\s+/g, ""));
     if (raw.length === 32) {
-      key = await crypto.subtle.importKey(
-        "jwk",
-        { kty: "EC", crv: "P-256", d: b64urlEncode(raw), x: pubX, y: pubY, ext: true },
-        { name: "ECDSA", namedCurve: "P-256" },
-        true,
-        ["sign"],
-      );
+      if (publicKeyB64 === undefined) {
+        throw new Error(
+          "KUKUROO_VAPID_PRIVATE is a bare 32-byte scalar, which does not carry its own " +
+            "public half, so KUKUROO_VAPID_PUBLIC must also be set. Storing the key as a " +
+            "JWK instead removes the need for a second value, and with it the chance of " +
+            "the two disagreeing.",
+        );
+      }
+      const { x, y } = splitPublicKey(publicKeyB64);
+      key = await importJwk({ kty: "EC", crv: "P-256", d: b64urlEncode(raw), x, y, ext: true });
     } else {
       key = await crypto.subtle.importKey(
         "pkcs8",
@@ -76,16 +74,45 @@ export async function importVapidPrivateKey(
     }
   }
 
-  const roundTripped = (await crypto.subtle.exportKey("jwk", key)) as JsonWebKey;
-  if (roundTripped.x !== pubX || roundTripped.y !== pubY) {
-    throw new Error(
-      "KUKUROO_VAPID_PRIVATE and KUKUROO_VAPID_PUBLIC are not the same keypair. " +
-        "Sends would be accepted by the push service and silently never delivered. " +
-        "Fix the pair; do not generate a new one if any device is already enrolled.",
-    );
+  const jwk = (await crypto.subtle.exportKey("jwk", key)) as JsonWebKey;
+  if (typeof jwk.x !== "string" || typeof jwk.y !== "string") {
+    throw new Error("VAPID private key did not yield a public point; is it a P-256 EC key?");
   }
 
-  return key;
+  if (publicKeyB64 !== undefined) {
+    const supplied = splitPublicKey(publicKeyB64);
+    if (jwk.x !== supplied.x || jwk.y !== supplied.y) {
+      throw new Error(
+        "KUKUROO_VAPID_PRIVATE and KUKUROO_VAPID_PUBLIC are not the same keypair. " +
+          "Sends would be accepted by the push service and silently never delivered. " +
+          "Fix the pair; do not generate a new one if any device is already enrolled.",
+      );
+    }
+  }
+
+  return {
+    privateKey: key,
+    publicKeyB64: b64urlEncode(
+      concat([0x04], b64urlDecode(jwk.x), b64urlDecode(jwk.y)),
+    ),
+  };
+}
+
+function importJwk(jwk: JsonWebKey): Promise<CryptoKey> {
+  return crypto.subtle.importKey("jwk", jwk, { name: "ECDSA", namedCurve: "P-256" }, true, [
+    "sign",
+  ]);
+}
+
+function splitPublicKey(publicKeyB64: string): { x: string; y: string } {
+  const pub = b64urlDecode(publicKeyB64);
+  if (pub.length !== 65 || pub[0] !== 0x04) {
+    throw new Error(
+      `KUKUROO_VAPID_PUBLIC must be the base64url uncompressed P-256 point ` +
+        `(65 bytes starting 0x04); got ${pub.length} bytes.`,
+    );
+  }
+  return { x: b64urlEncode(pub.slice(1, 33)), y: b64urlEncode(pub.slice(33, 65)) };
 }
 
 /**

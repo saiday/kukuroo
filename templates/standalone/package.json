@@ -1,0 +1,18 @@
+{
+  "name": "my-kukuroo",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "setup": "kukuroo init",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail"
+  },
+  "dependencies": {
+    "kukuroo": "^0.1.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260101.0",
+    "typescript": "^5.9.3",
+    "wrangler": "^4.76.0"
+  }
+}
