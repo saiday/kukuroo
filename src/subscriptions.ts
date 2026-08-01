@@ -65,7 +65,7 @@ export async function deleteSubscription(kv: KVNamespace, key: string): Promise<
  * Validate what the enrolment page posted. A malformed subscription stored now
  * is a send that fails much later, at which point nothing points back here.
  */
-export function parseSubscriptionBody(body: unknown): StoredSubscription {
+export function parseSubscriptionBody(body: unknown, label?: unknown): StoredSubscription {
   const b = body as Record<string, unknown> | null;
   const endpoint = b?.endpoint;
   const keys = b?.keys as Record<string, unknown> | undefined;
@@ -77,12 +77,16 @@ export function parseSubscriptionBody(body: unknown): StoredSubscription {
     throw new Error("keys.p256dh and keys.auth are required");
   }
 
-  const label = typeof b?.label === "string" ? b.label.slice(0, 64) : undefined;
+  // The label rides alongside the subscription rather than inside it, because
+  // what the browser hands back from `subscription.toJSON()` is not ours to add
+  // fields to.
+  const supplied = typeof label === "string" ? label : b?.label;
+  const cleaned = typeof supplied === "string" ? supplied.slice(0, 64) : undefined;
 
   return {
     endpoint,
     keys: { p256dh: keys.p256dh, auth: keys.auth },
     createdAt: new Date().toISOString(),
-    ...(label !== undefined ? { label } : {}),
+    ...(cleaned !== undefined ? { label: cleaned } : {}),
   };
 }

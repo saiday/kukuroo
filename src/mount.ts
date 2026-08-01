@@ -110,7 +110,7 @@ async function handleSubscribe(request: Request, env: KukurooEnv): Promise<Respo
 
   let subscription;
   try {
-    subscription = parseSubscriptionBody(body.subscription ?? body);
+    subscription = parseSubscriptionBody(body.subscription ?? body, body.label);
   } catch (error) {
     return json({ error: error instanceof Error ? error.message : String(error) }, 400);
   }

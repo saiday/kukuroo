@@ -9,6 +9,7 @@
   },
   "files": [
     "src",
+    "scripts",
     "README.md"
   ],
   "devDependencies": {
@@ -16,7 +17,11 @@
     "typescript": "^5.9.3"
   },
   "scripts": {
+    "init": "node scripts/init.mjs",
     "test": "node --experimental-strip-types --no-warnings test/crypto.test.mjs",
     "typecheck": "tsc --noEmit"
+  },
+  "bin": {
+    "kukuroo-init": "scripts/init.mjs"
   }
 }

@@ -12,3 +12,6 @@ dist/
 *.token
 
 .DS_Store
+
+# Written by scripts/init.mjs. Holds the VAPID private key.
+kukuroo.credentials.json

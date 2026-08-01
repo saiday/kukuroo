@@ -72,18 +72,42 @@ Custom Domain. Set `workers_dev` and `preview_urls` to `false`. Confirm it serve
 curl -sI https://push.example.com    # expect: HTTP/2 200
 ```
 
-**2. Generate the VAPID keypair, once.**
-Store the private key as the `KUKUROO_VAPID_PRIVATE` Worker Secret and the public
-key as the `KUKUROO_VAPID_PUBLIC` plain var, since the enrolment page needs it
-client-side. Back the private key up offline before you continue.
+**2. Generate every secret, once, in one command.**
 
-**3. Generate a send token and an invite code.**
-Both are Worker Secrets: `KUKUROO_SEND_TOKEN` and `KUKUROO_INVITE_CODE`.
+```sh
+npx kukuroo-init
+```
 
-Enrolment is invite-gated for a reason. Without it, anyone who finds the URL can
-enrol their own phone and start receiving your notification titles.
+This generates the VAPID keypair, a send token, and an invite code; installs the
+three secrets into the Worker; and writes them all to `kukuroo.credentials.json`
+at mode 0600. It prints the public key to paste into your `wrangler` config and
+the invite code to type into your phone.
 
-**4. Deploy.**
+**Keep that file.** It is not a convenience, it is the only copy. A Worker Secret
+is write-only: `wrangler secret list` returns names and never values, so once the
+VAPID private key is in Cloudflare and nowhere else, it is gone. Back the file up
+somewhere you will still have in three years.
+
+The script refuses to run if `KUKUROO_VAPID_PRIVATE` already exists, because
+`wrangler secret put` overwrites without asking and overwriting that one is the
+silent-death failure above.
+
+*Doing it by hand instead?* Generate all four values **before** you touch
+Cloudflare, and write them down first. The trap is generating a send token,
+piping it straight into `wrangler secret put`, and discovering at first send that
+there is no way to read it back.
+
+**3. Deploy.**
+
+**4. Put the send token where your sender can read it.**
+
+```sh
+node -p 'require("./kukuroo.credentials.json").sendToken' > ~/.kukuroo-send-token
+chmod 600 ~/.kukuroo-send-token
+```
+
+Do this now rather than later. Every other step is about the device; this is the
+one that makes `POST /push/send` usable, and it is easy to walk past.
 
 **5. Now enrol a device.**
 On iOS: open the origin in Safari, **Add to Home Screen**, **open it from the
@@ -91,6 +115,23 @@ icon**, then enable notifications and enter the invite code.
 
 Enrolling from a Safari tab does not work on iOS. This is the step people get
 wrong, which is why it is last.
+
+### Rotating
+
+Only the VAPID keypair is permanent. The other two are not bound to anything and
+can be replaced whenever you like, with no device re-enrolling:
+
+```sh
+npx kukuroo-init --rotate send-token
+npx kukuroo-init --rotate invite-code
+```
+
+Both require `kukuroo.credentials.json`. If you set your deployment up by hand
+and have no such file, rotate with `wrangler secret put` directly and start
+keeping the value somewhere yourself.
+
+There is no `--rotate` for the VAPID keypair, on purpose. Asking for one prints
+an explanation rather than doing it.
 
 ---
 
@@ -108,6 +149,16 @@ wrong, which is why it is last.
   this. If notifications matter to you, send yourself a daily "still alive" ping,
   because absence of a scheduled message is the only reliable signal that the
   channel has died.
+- **`app_badge` moved position between Safari versions**, and Apple never
+  documented the move: inside `notification` on 18.4 through 18.6, top level on
+  26.0 and later. Kukuroo emits it in **both** positions, so callers never have
+  to know which iOS a device is on. Measured on iOS 26.5.2: the top-level
+  position sets the badge and the one inside `notification` is ignored entirely,
+  so this is not theoretical tidiness.
+- **There is no badge-only or silent update.** `title` and `navigate` are
+  required on every message, so every push displays a notification. `silent: true`
+  suppresses sound, not the banner. If you want to change the badge, you are also
+  showing the user something.
 
 ---
 
