@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.wrangler/
+
+# Secrets. This repository is public; nothing here is ever a place for a key.
+.dev.vars
+.dev.vars.*
+.env
+.env.*
+*.pem
+*.key
+*.token
+
+.DS_Store
