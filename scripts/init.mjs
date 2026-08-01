@@ -60,35 +60,63 @@ const randomInviteCode = () =>
 
 // ---------------------------------------------------------------------------
 
-function wrangler(args, stdin) {
+function wrangler(args, { stdin, captureStderr = false } = {}) {
   return execFileSync("npx", ["wrangler", ...args], {
     input: stdin,
     encoding: "utf8",
-    stdio: ["pipe", "pipe", "inherit"],
+    // stderr is inherited by default so wrangler's own diagnostics reach the
+    // operator. The probe below captures it instead, because there it is an
+    // expected answer rather than a problem worth showing.
+    stdio: ["pipe", "pipe", captureStderr ? "pipe" : "inherit"],
   });
 }
 
 /**
- * Which secrets the Worker already holds. This is the guard that makes the
- * script safe to run twice: `wrangler secret put` overwrites without asking,
- * and overwriting KUKUROO_VAPID_PRIVATE destroys every enrolled device with no
- * error anywhere.
+ * Which secrets the Worker already holds, or null if the Worker does not exist
+ * yet. This is the guard that makes the script safe to run twice: `wrangler
+ * secret put` overwrites without asking, and overwriting KUKUROO_VAPID_PRIVATE
+ * destroys every enrolled device with no error anywhere.
+ *
+ * `wrangler secret list` does *not* return an empty array for a Worker that has
+ * never been deployed. It exits non-zero with "Worker ... not found" on stderr
+ * and writes nothing at all to stdout, so treating any failure as fatal would
+ * reject every genuine first-time user, which is the only case this script
+ * really exists for. A Worker that does not exist holds no secrets; that is not
+ * an error, it is the answer.
+ *
+ * `secret put` creates a draft Worker on demand, so setup legitimately runs
+ * before the first deploy.
  */
 function existingSecretNames() {
+  let output;
   try {
-    return JSON.parse(wrangler(["secret", "list"])).map((s) => s.name);
-  } catch {
+    output = wrangler(["secret", "list"], { captureStderr: true });
+  } catch (error) {
+    // Distinguish "no Worker yet" from "wrangler cannot talk to Cloudflare at
+    // all". Only the second is worth stopping for, and the difference matters:
+    // one is a normal first run, the other is a misconfiguration that would
+    // otherwise be silently reinterpreted as "no secrets exist" and walked past.
+    const stderr = String(error.stderr ?? "");
+    if (/not found/i.test(stderr)) return null;
     die(
-      "Could not read the Worker's secret list.\n" +
-        "Run this from the directory holding your wrangler config, with wrangler authenticated.",
+      "Could not read the Worker's secret list. wrangler said:\n\n" +
+        stderr.trim() +
+        "\n\nRun this from the directory holding your wrangler config, with wrangler\n" +
+        "authenticated (`npx wrangler login`).",
     );
+  }
+
+  try {
+    return JSON.parse(output).map((s) => s.name);
+  } catch {
+    die(`Could not parse the output of \`wrangler secret list\`:\n\n${output}`);
   }
 }
 
 function putSecret(name, value) {
   // Piped on stdin, never as an argument, so the value stays out of the process
   // table and out of shell history.
-  wrangler(["secret", "put", name], value);
+  wrangler(["secret", "put", name], { stdin: value });
   console.log(`  set ${name}`);
 }
 
@@ -146,7 +174,12 @@ async function firstTimeSetup() {
     );
   }
 
-  const present = existingSecretNames().filter((n) => Object.values(SECRET_NAMES).includes(n));
+  const deployed = existingSecretNames();
+  if (deployed === null) {
+    console.log("No Worker deployed yet. `wrangler secret put` will create a draft one.");
+  }
+
+  const present = (deployed ?? []).filter((n) => Object.values(SECRET_NAMES).includes(n));
   if (present.includes(SECRET_NAMES.vapidPrivateKey)) {
     die(
       `The Worker already holds ${SECRET_NAMES.vapidPrivateKey}, and no local\n` +
