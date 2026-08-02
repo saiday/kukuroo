@@ -109,3 +109,22 @@ await rejects("invalid icon rejected", { notification: { title: "a", navigate: "
 await rejects("missing title rejected", { notification: { navigate: "https://x.test/" } });
 await rejects("WebKit-ignored field rejected", { notification: { title: "a", navigate: "https://x.test/", actions: [] } });
 await rejects("oversize payload rejected", { notification: { title: "a", navigate: "https://x.test/", body: "x".repeat(4000) } });
+
+// ---- the navigate-origin policy --------------------------------------------
+{
+  const opts = { notification: { title: "a", navigate: "https://elsewhere.test/x" } };
+  let threw = false;
+  try { buildDeclarativePayload(opts, { navigateOrigin: "https://push.example.com" }); } catch { threw = true; }
+  ok("navigate on a foreign origin is rejected when a policy is set", threw);
+
+  const same = { notification: { title: "a", navigate: "https://push.example.com/w/x?focus=1" } };
+  const built = buildDeclarativePayload(same, { navigateOrigin: "https://push.example.com" });
+  ok("navigate on the allowed origin passes", JSON.parse(built).notification.navigate.startsWith("https://push.example.com/"));
+
+  // An icon on a CDN must still be allowed; thumbnails are hotlinked.
+  const cdn = { notification: { title: "a", navigate: "https://push.example.com/w/x", icon: "https://cdn.other.test/i.jpg" } };
+  const okIcon = buildDeclarativePayload(cdn, { navigateOrigin: "https://push.example.com" });
+  ok("icon is not restricted by the navigate policy", JSON.parse(okIcon).notification.icon === "https://cdn.other.test/i.jpg");
+
+  ok("no policy set means no restriction", typeof buildDeclarativePayload(opts) === "string");
+}

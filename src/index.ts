@@ -14,6 +14,7 @@
 export { importVapidKeys, type VapidKeys } from "./vapid.ts";
 export { mountKukuroo, type KukurooRoutes, type MountOptions } from "./mount.ts";
 export { send, type SendOptions, type SendResult } from "./send.ts";
+export { type PayloadPolicy } from "./payload.ts";
 export {
   buildDeclarativePayload,
   PAYLOAD_BUDGET_BYTES,

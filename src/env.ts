@@ -41,4 +41,13 @@ export interface KukurooEnv {
    * sender. Defaults to the push service's own origin, which Apple accepts.
    */
   KUKUROO_VAPID_SUBJECT?: string;
+
+  /**
+   * Optional but recommended for mounted deployments: the origin every
+   * notification's `navigate` must be on, e.g. `https://push.example.com`.
+   *
+   * Mounting makes same-origin likely; this makes it enforced. A `navigate`
+   * that leaves the origin ejects the user out of the installed web app.
+   */
+  KUKUROO_NAVIGATE_ORIGIN?: string;
 }

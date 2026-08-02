@@ -37,10 +37,20 @@
   // Subscriptions. The binding name is not configurable; Kukuroo looks for
   // exactly this. Leaving out "id" lets wrangler create the namespace on the
   // first deploy.
-  "kv_namespaces": [{ "binding": "KUKUROO_SUBS" }]
+  "kv_namespaces": [{ "binding": "KUKUROO_SUBS" }],
 
-  // No "vars" block is needed. The VAPID keypair is stored as a JWK in the
-  // KUKUROO_VAPID_PRIVATE secret, so the public half is derived from it and
-  // served at /push/public-key. Two values that must agree forever is a failure
-  // waiting to happen, so there is only one.
+  // Every notification's `navigate` must be on this origin. Set it to the same
+  // hostname you chose above.
+  //
+  // Serving enrolment and push from one origin is what keeps a tap inside the
+  // installed web app, but that only makes same-origin *likely*: without this,
+  // the guarantee rests on every future caller remembering, and a `navigate`
+  // that leaves the origin drops the user out into a browser tab. It does not
+  // restrict `icon`, which legitimately points at a CDN.
+  "vars": { "KUKUROO_NAVIGATE_ORIGIN": "https://push.example.com" }
+
+  // Note there is no KUKUROO_VAPID_PUBLIC here. The keypair is stored as a JWK
+  // in the KUKUROO_VAPID_PRIVATE secret, so the public half is derived from it
+  // and served at /push/public-key. Two values that must agree forever is a
+  // failure waiting to happen, so there is only one.
 }

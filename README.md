@@ -174,6 +174,18 @@ keeping the value somewhere yourself.
 There is no rotate for the VAPID keypair, on purpose. Asking for one prints
 an explanation rather than doing it.
 
+### If setup is interrupted
+
+```sh
+npx kukuroo init --resume
+```
+
+Finishes the job from the local credentials file. The file is written **before**
+anything is uploaded, precisely so this is possible: were it the other way round,
+a failure partway would leave the VAPID key in Cloudflare, which cannot be read
+back, with no copy anywhere else — and the overwrite guard would then refuse the
+retry, locking the safe with the only key inside it.
+
 ---
 
 ## iOS notes
@@ -227,9 +239,17 @@ const kukuroo = mountKukuroo({ prefix: "/push", standalone: false })
 await kukuroo.handle(request, env)   // Response, or null if the path is not ours
 ```
 
-`KUKUROO_VAPID_SUBJECT` is optional: the VAPID `sub` claim, a `mailto:` or
-`https:` URI. It defaults to the push service's own origin, which is accepted but
-identifies nobody.
+Two optional vars:
+
+- `KUKUROO_VAPID_SUBJECT` — the VAPID `sub` claim, a `mailto:` or `https:` URI.
+  Defaults to the push service's own origin, which is accepted but identifies
+  nobody.
+- `KUKUROO_NAVIGATE_ORIGIN` — if set, every notification's `navigate` must be on
+  this origin. **Set it.** Mounting Kukuroo into your own Worker is what keeps
+  taps inside the installed web app, but mounting alone only makes that likely;
+  this makes it enforced. A `navigate` that leaves the origin ejects the user
+  into a browser tab. It does not restrict `icon`, which legitimately points at
+  a CDN.
 
 ### Sending
 

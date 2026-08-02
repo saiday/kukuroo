@@ -54,7 +54,12 @@ export async function send(env: KukurooEnv, options: SendOptions): Promise<SendR
   // Built and validated once, before any network call. If the payload is wrong
   // it is wrong for every device, and finding out after a partial fan-out is
   // strictly worse than finding out now.
-  const json = buildDeclarativePayload(options);
+  // The origin restriction is operator policy from the environment, never from
+  // the request body: a caller holding the send token controls the body, so a
+  // body-supplied limit would restrict nobody.
+  const json = buildDeclarativePayload(options, {
+    navigateOrigin: env.KUKUROO_NAVIGATE_ORIGIN,
+  });
   const plaintext = utf8(json);
 
   const subscriptions = await listSubscriptions(env.KUKUROO_SUBS);

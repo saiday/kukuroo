@@ -221,13 +221,51 @@ async function rotate(what) {
   }
 }
 
+/**
+ * Upload all three secrets, and say something useful if it goes wrong partway.
+ *
+ * The local file is already on disk before this runs, so a failure here is
+ * recoverable: nothing has been lost, and `--resume` finishes the job.
+ */
+function uploadSecrets(credentials) {
+  try {
+    putSecret(SECRET_NAMES.vapidPrivateKey, credentials.vapidPrivateKey);
+    putSecret(SECRET_NAMES.sendToken, credentials.sendToken);
+    putSecret(SECRET_NAMES.inviteCode, credentials.inviteCode);
+  } catch (error) {
+    die(
+      `Upload failed partway: ${error instanceof Error ? error.message : String(error)}\n\n` +
+        `Your keys are safe. They were written to ${CREDENTIALS_PATH} before any\n` +
+        "upload started, which is the whole reason that ordering exists.\n\n" +
+        "Fix whatever broke, then finish the job with:\n" +
+        "  npx kukuroo init --resume",
+    );
+  }
+}
+
+/**
+ * Re-upload from the local file. Idempotent: putting the same VAPID key back is
+ * not a rotation, so nothing re-enrols.
+ */
+function resumeSetup() {
+  if (!existsSync(CREDENTIALS_PATH)) {
+    die(`No ${CREDENTIALS_PATH} to resume from. Run \`npx kukuroo init\`.`);
+  }
+  const credentials = JSON.parse(readFileSync(CREDENTIALS_PATH, "utf8"));
+  console.log(`\nResuming from ${CREDENTIALS_PATH}.\n`);
+  uploadSecrets(credentials);
+  console.log(`\nDone. Your invite code is:\n\n     ${credentials.inviteCode}\n`);
+}
+
 async function firstTimeSetup() {
   if (existsSync(CREDENTIALS_PATH)) {
     die(
       `${CREDENTIALS_PATH} already exists.\n\n` +
-        "Refusing to overwrite it. If you are trying to replace a rotatable secret, use\n" +
-        "  npx kukuroo rotate send-token\n" +
-        "  npx kukuroo rotate invite-code",
+        "Refusing to overwrite it: it holds a VAPID private key that cannot be\n" +
+        "regenerated without re-enrolling every device.\n\n" +
+        "  npx kukuroo init --resume        finish an interrupted setup\n" +
+        "  npx kukuroo rotate send-token    replace the send token\n" +
+        "  npx kukuroo rotate invite-code   replace the invite code",
     );
   }
 
@@ -243,6 +281,8 @@ async function firstTimeSetup() {
         "credentials file explains where it came from.\n\n" +
         "Refusing to continue. Overwriting it would silently kill every device already\n" +
         "enrolled against this origin, and nothing would report it.\n\n" +
+        "If you have the key in a backup, put the file back as\n" +
+        `${CREDENTIALS_PATH} and run \`npx kukuroo init --resume\`.\n\n` +
         "If nothing is enrolled yet and you want a clean start, delete that secret first:\n" +
         `  npx wrangler secret delete ${SECRET_NAMES.vapidPrivateKey}`,
     );
@@ -259,10 +299,14 @@ async function firstTimeSetup() {
     inviteCode: randomInviteCode(),
   };
 
-  putSecret(SECRET_NAMES.vapidPrivateKey, credentials.vapidPrivateKey);
-  putSecret(SECRET_NAMES.sendToken, credentials.sendToken);
-  putSecret(SECRET_NAMES.inviteCode, credentials.inviteCode);
+  // The local copy is written *before* anything is uploaded, and the ordering is
+  // the point. A Worker Secret cannot be read back, so if the VAPID key reached
+  // Cloudflare and the backup did not, the only copy of a key that can never be
+  // regenerated lives somewhere nothing can retrieve it from. Worse, the guard
+  // above would then refuse the retry: the safe would be locked with the only
+  // key inside it.
   writeCredentials(credentials);
+  uploadSecrets(credentials);
 
   console.log(`
 Done. Two things left.
@@ -293,6 +337,7 @@ invite code can be rotated any time with --rotate, and nothing re-enrols.
 const USAGE = `kukuroo <command>
 
   init                    generate every secret and install it into the Worker
+  init --resume           finish an interrupted setup from the local credentials
   rotate send-token       replace the send token
   rotate invite-code      replace the invite code
 
@@ -303,7 +348,8 @@ const [command, argument] = process.argv.slice(2);
 switch (command) {
   case undefined:
   case "init":
-    await firstTimeSetup();
+    if (argument === "--resume") resumeSetup();
+    else await firstTimeSetup();
     break;
   case "rotate":
     await rotate(argument);

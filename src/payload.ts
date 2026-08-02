@@ -84,7 +84,26 @@ function assertAbsoluteUrl(value: string, field: string): void {
  * rejected, so emitting it in *both* positions is correct on every version, and
  * doing it here means no caller has to know which iOS a given device is on.
  */
-export function buildDeclarativePayload(options: BuildPayloadOptions): string {
+export interface PayloadPolicy {
+  /**
+   * If set, `navigate` must be on this origin.
+   *
+   * Mounting Kukuroo into the app's own Worker is what makes every notification
+   * land back inside the installed web app, and it is the reason the unverified
+   * cross-origin question does not apply. But mounting only makes same-origin
+   * *likely*; this makes it true. Without it the guarantee rests on every future
+   * caller remembering, and a `navigate` that leaves the origin ejects the user
+   * from the installed app into a browser tab.
+   *
+   * Deliberately not applied to `icon`, which legitimately points at a CDN.
+   */
+  navigateOrigin?: string;
+}
+
+export function buildDeclarativePayload(
+  options: BuildPayloadOptions,
+  policy: PayloadPolicy = {},
+): string {
   const { notification, appBadge, mutable } = options;
 
   if (typeof notification?.title !== "string" || notification.title.length === 0) {
@@ -97,6 +116,17 @@ export function buildDeclarativePayload(options: BuildPayloadOptions): string {
   assertAbsoluteUrl(notification.navigate, "navigate");
   if (notification.icon !== undefined) {
     assertAbsoluteUrl(notification.icon, "icon");
+  }
+
+  if (policy.navigateOrigin !== undefined) {
+    const target = new URL(notification.navigate).origin;
+    if (target !== policy.navigateOrigin) {
+      throw new Error(
+        `notification.navigate points at ${target}, but this deployment restricts it to ` +
+          `${policy.navigateOrigin}. Tapping a notification that leaves the origin ejects ` +
+          `the user out of the installed web app into a browser tab.`,
+      );
+    }
   }
   if (notification.dir !== undefined && !["auto", "ltr", "rtl"].includes(notification.dir)) {
     throw new Error(`notification.dir must be auto, ltr, or rtl; got ${notification.dir}`);
