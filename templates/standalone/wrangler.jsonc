@@ -34,6 +34,18 @@
   //
   // "workers_dev": true,
 
+  // Option C: a path on a website you already have, e.g. www.example.com/push/*.
+  // The site itself can be hosted anywhere; what matters is that the hostname's
+  // DNS is proxied through Cloudflare, so the Worker answers /push/* before your
+  // origin server ever sees it. Replace Option A's route with:
+  //
+  // "workers_dev": false,
+  // "routes": [{ "pattern": "www.example.com/push/*", "zone_name": "example.com" }],
+  //
+  // Devices then enrol at your site's own origin, which is where notification
+  // taps should land anyway. See "Using Kukuroo with an existing website" in the
+  // README.
+
   // Subscriptions. The binding name is not configurable; Kukuroo looks for
   // exactly this. Leaving out "id" lets wrangler create the namespace on the
   // first deploy.
@@ -47,7 +59,15 @@
   // the guarantee rests on every future caller remembering, and a `navigate`
   // that leaves the origin drops the user out into a browser tab. It does not
   // restrict `icon`, which legitimately points at a CDN.
-  "vars": { "KUKUROO_NAVIGATE_ORIGIN": "https://push.example.com" }
+  "vars": {
+    "KUKUROO_NAVIGATE_ORIGIN": "https://push.example.com"
+
+    // If pages on another origin call subscribe and public-key from the
+    // browser (README: "Using Kukuroo with an existing website", shape 5),
+    // list their exact origins:
+    //
+    // ,"KUKUROO_ALLOWED_ORIGINS": "https://www.example.com"
+  }
 
   // Note there is no KUKUROO_VAPID_PUBLIC here. The keypair is stored as a JWK
   // in the KUKUROO_VAPID_PRIVATE secret, so the public half is derived from it

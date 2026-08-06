@@ -50,4 +50,16 @@ export interface KukurooEnv {
    * that leaves the origin ejects the user out of the installed web app.
    */
   KUKUROO_NAVIGATE_ORIGIN?: string;
+
+  /**
+   * Optional. Comma-separated exact origins whose pages may call
+   * `<prefix>/subscribe` and `<prefix>/public-key` from the browser, e.g.
+   * "https://www.example.com". Unset, no CORS headers are sent, which is the
+   * right default when the enrolment page lives on this Worker's own origin.
+   *
+   * `<prefix>/send` is never CORS-enabled regardless of this list: the send
+   * token is a server secret, and a browser page that holds one is a leak in
+   * progress, so that mistake should fail on its first test.
+   */
+  KUKUROO_ALLOWED_ORIGINS?: string;
 }

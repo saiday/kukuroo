@@ -11,9 +11,13 @@
  */
 
 export interface EnrolmentPageOptions {
-  /** Where the page posts the subscription. */
+  /**
+   * Where the page posts the subscription: a path on the serving origin, or an
+   * absolute URL when the page is served by a host on one origin and Kukuroo
+   * runs on another (which needs KUKUROO_ALLOWED_ORIGINS set on the Worker).
+   */
   subscribePath: string;
-  /** Where the page fetches the VAPID public key `subscribe()` needs. */
+  /** Where the page fetches the VAPID public key; path or absolute URL, as above. */
   publicKeyPath: string;
   title?: string;
 }

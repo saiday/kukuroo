@@ -1,12 +1,16 @@
 /**
- * The route set. Three endpoints, two of them gated.
+ * The route set. Four endpoints, two of them gated.
  *
  *   POST <prefix>/subscribe   invite-gated    stores a subscription in KV
  *   POST <prefix>/send        bearer-gated    encrypts and fans out
+ *   GET  <prefix>/public-key  open            the VAPID public key
  *   GET  <prefix>/enroll      open            the bundled enrolment page
  *
  * `handle` returns `null` for anything it does not own, so a host Worker can
  * fall through to its own routing without Kukuroo having to know about it.
+ *
+ * With KUKUROO_ALLOWED_ORIGINS set, `subscribe` and `public-key` also answer
+ * CORS preflights from the listed origins. `send` never does; see corsFor.
  */
 
 import { enrolmentPage } from "./enroll-page.ts";
@@ -31,10 +35,14 @@ export interface KukurooRoutes {
   handle(request: Request, env: KukurooEnv): Promise<Response | null>;
 }
 
-function json(body: unknown, status = 200): Response {
+function json(
+  body: unknown,
+  status = 200,
+  extraHeaders: Record<string, string> = {},
+): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { "content-type": "application/json; charset=utf-8" },
+    headers: { "content-type": "application/json; charset=utf-8", ...extraHeaders },
   });
 }
 
@@ -58,12 +66,17 @@ function secretEquals(a: string, b: string): boolean {
  * "you skipped a setup step". Given how many manual steps stand between a fresh
  * account and a working deployment, this is likely rather than hypothetical.
  */
-function requireSecret(value: string | undefined, name: string): string | Response {
+function requireSecret(
+  value: string | undefined,
+  name: string,
+  extraHeaders: Record<string, string> = {},
+): string | Response {
   if (typeof value === "string" && value.length > 0) return value;
   console.error(`kukuroo: ${name} is not set on this Worker.`);
   return json(
     { error: `${name} is not configured on this Worker. Run \`npx kukuroo init\`.` },
     503,
+    extraHeaders,
   );
 }
 
@@ -72,6 +85,78 @@ function bearerToken(request: Request): string | null {
   if (header === null) return null;
   const match = /^Bearer\s+(.+)$/i.exec(header.trim());
   return match === null ? null : match[1];
+}
+
+/**
+ * CORS is operator policy from the environment, like the navigate origin.
+ * Unset, no CORS header is ever emitted and cross-origin browser calls fail,
+ * which is the right default for a deployment that serves its own enrolment.
+ *
+ * Only `subscribe` and `public-key` ever get CORS headers. `send` never does,
+ * deliberately: the send token is a server secret, and a browser page holding
+ * one is a leak in progress. Refusing CORS there makes that mistake fail on
+ * its first test rather than work quietly until someone views source.
+ *
+ * Entries are normalised through `new URL().origin`, so a stray path or a
+ * default port does not silently fail to match. There is no wildcard: the
+ * list of pages that may enrol a device is short, and writing it out is the
+ * point.
+ */
+let originsCache: { raw: string; origins: string[] } | undefined;
+
+function parseAllowedOrigins(env: KukurooEnv): string[] {
+  const raw = env.KUKUROO_ALLOWED_ORIGINS ?? "";
+  if (originsCache?.raw === raw) return originsCache.origins;
+
+  const origins: string[] = [];
+  for (const entry of raw.split(",")) {
+    const trimmed = entry.trim();
+    if (trimmed === "") continue;
+    try {
+      const origin = new URL(trimmed).origin;
+      if (origin === "null") throw new Error("an opaque origin matches nothing");
+      origins.push(origin);
+    } catch {
+      console.error(
+        `kukuroo: KUKUROO_ALLOWED_ORIGINS entry ${JSON.stringify(trimmed)} is not an ` +
+          `origin (expected e.g. "https://www.example.com"); ignoring it.`,
+      );
+    }
+  }
+  originsCache = { raw, origins };
+  return origins;
+}
+
+function corsFor(request: Request, env: KukurooEnv): Record<string, string> {
+  const origin = request.headers.get("origin");
+  if (origin === null || !parseAllowedOrigins(env).includes(origin)) return {};
+  // Echo the one origin rather than `*`, and Vary so shared caches key on it.
+  return { "access-control-allow-origin": origin, vary: "origin" };
+}
+
+/**
+ * Answer a preflight, or say plainly why not. A disallowed origin gets a 403
+ * naming the variable, because the alternative the developer sees is an
+ * opaque CORS shrug in the browser console and nothing anywhere else.
+ */
+function preflight(request: Request, env: KukurooEnv, allowMethods: string): Response {
+  const cors = corsFor(request, env);
+  if ("access-control-allow-origin" in cors) {
+    return new Response(null, {
+      status: 204,
+      headers: {
+        ...cors,
+        "access-control-allow-methods": allowMethods,
+        "access-control-allow-headers": "content-type",
+        "access-control-max-age": "86400",
+      },
+    });
+  }
+  const origin = request.headers.get("origin");
+  if (origin !== null && parseAllowedOrigins(env).length > 0) {
+    return json({ error: `origin ${origin} is not in KUKUROO_ALLOWED_ORIGINS` }, 403);
+  }
+  return json({ error: "method not allowed" }, 405);
 }
 
 export function mountKukuroo(options: MountOptions = {}): KukurooRoutes {
@@ -100,22 +185,30 @@ export function mountKukuroo(options: MountOptions = {}): KukurooRoutes {
       // Public by nature: the client needs it to call `pushManager.subscribe()`.
       // Serving it means a deployment has one VAPID value to configure instead
       // of two, which removes the only way they can disagree.
-      if (route === "/public-key" && request.method === "GET") {
+      if (route === "/public-key") {
+        if (request.method === "OPTIONS") return preflight(request, env, "GET");
+        if (request.method !== "GET") return json({ error: "method not allowed" }, 405);
+        const cors = corsFor(request, env);
         try {
           const { publicKeyB64 } = await importVapidKeys(
             env.KUKUROO_VAPID_PRIVATE,
             env.KUKUROO_VAPID_PUBLIC,
           );
-          return json({ publicKey: publicKeyB64 });
+          return json({ publicKey: publicKeyB64 }, 200, cors);
         } catch (error) {
           console.error("kukuroo: VAPID key is not usable:", error);
-          return json({ error: "the VAPID key on this Worker is not usable" }, 503);
+          return json({ error: "the VAPID key on this Worker is not usable" }, 503, cors);
         }
       }
 
       if (route === "/subscribe") {
-        if (request.method !== "POST") return json({ error: "method not allowed" }, 405);
-        return handleSubscribe(request, env);
+        if (request.method === "OPTIONS") return preflight(request, env, "POST");
+        // CORS headers ride on every response from here down, including the
+        // 4xx ones: without them the calling page cannot read the error it
+        // needs to display.
+        const cors = corsFor(request, env);
+        if (request.method !== "POST") return json({ error: "method not allowed" }, 405, cors);
+        return handleSubscribe(request, env, cors);
       }
 
       if (route === "/send") {
@@ -128,31 +221,35 @@ export function mountKukuroo(options: MountOptions = {}): KukurooRoutes {
   };
 }
 
-async function handleSubscribe(request: Request, env: KukurooEnv): Promise<Response> {
+async function handleSubscribe(
+  request: Request,
+  env: KukurooEnv,
+  cors: Record<string, string>,
+): Promise<Response> {
   let body: Record<string, unknown>;
   try {
     body = (await request.json()) as Record<string, unknown>;
   } catch {
-    return json({ error: "body must be JSON" }, 400);
+    return json({ error: "body must be JSON" }, 400, cors);
   }
 
-  const expected = requireSecret(env.KUKUROO_INVITE_CODE, "KUKUROO_INVITE_CODE");
+  const expected = requireSecret(env.KUKUROO_INVITE_CODE, "KUKUROO_INVITE_CODE", cors);
   if (expected instanceof Response) return expected;
 
   const invite = typeof body.invite === "string" ? body.invite : "";
   if (!secretEquals(invite, expected)) {
-    return json({ error: "invalid invite code" }, 403);
+    return json({ error: "invalid invite code" }, 403, cors);
   }
 
   let subscription;
   try {
     subscription = parseSubscriptionBody(body.subscription ?? body, body.label);
   } catch (error) {
-    return json({ error: error instanceof Error ? error.message : String(error) }, 400);
+    return json({ error: error instanceof Error ? error.message : String(error) }, 400, cors);
   }
 
   await putSubscription(env.KUKUROO_SUBS, subscription);
-  return json({ ok: true });
+  return json({ ok: true }, 200, cors);
 }
 
 async function handleSend(request: Request, env: KukurooEnv): Promise<Response> {
