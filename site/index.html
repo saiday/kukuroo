@@ -4,17 +4,17 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Kukuroo: web push with no server to run</title>
-<meta name="description" content="A Web Push gateway that runs entirely on a free Cloudflare Worker. Nothing to host, nothing to install on your phone. You keep the keys.">
+<meta name="description" content="Turn one HTTP call into a lock-screen notification. A free Cloudflare Worker, your own keys, no app, no vendor in the middle.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='7' fill='%23203129'/%3E%3Ccircle cx='8' cy='8' r='1.6' fill='%23c9a254'/%3E%3Crect x='7.4' y='2.5' width='1.2' height='5.5' rx='.6' fill='%23c9a254'/%3E%3C/svg%3E">
 <style>
   :root {
-    --snow: #f4f6f3;        /* cold paper, a green whisper           */
-    --ink: #1f2a24;         /* pine-black text                        */
-    --feather: #5c6d63;     /* grey-green secondary text              */
-    --pine: #203129;        /* code panel background                  */
-    --pine-deep: #182620;   /* code panel edge                        */
-    --brass: #8a6b25;       /* clockwork brass, on light              */
-    --brass-bright: #c9a254;/* clockwork brass, on dark               */
+    --snow: #f4f6f3;
+    --ink: #1f2a24;
+    --feather: #5c6d63;
+    --pine: #203129;
+    --pine-deep: #182620;
+    --brass: #8a6b25;
+    --brass-bright: #c9a254;
     --card: #ffffff;
     --rule: #d8ddd7;
     --mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
@@ -34,52 +34,44 @@
   }
 
   * { box-sizing: border-box; margin: 0; }
-  html { scroll-behavior: smooth; }
   body {
-    background: var(--snow);
-    color: var(--ink);
-    font: 17px/1.65 var(--sans);
-    -webkit-font-smoothing: antialiased;
+    background: var(--snow); color: var(--ink);
+    font: 17px/1.6 var(--sans); -webkit-font-smoothing: antialiased;
   }
   a { color: var(--brass); text-decoration-thickness: 1px; text-underline-offset: 3px; }
   a:hover { text-decoration-thickness: 2px; }
   :focus-visible { outline: 2px solid var(--brass); outline-offset: 3px; border-radius: 2px; }
 
-  .wrap { max-width: 68rem; margin-inline: auto; padding-inline: 1.25rem; }
+  .wrap { max-width: 64rem; margin-inline: auto; padding-inline: 1.25rem; }
 
-  /* ---------- masthead ---------- */
   header.wrap {
-    display: flex; align-items: baseline; justify-content: space-between;
-    padding-block: 1.4rem;
+    display: flex; align-items: baseline; justify-content: space-between; padding-block: 1.4rem;
   }
-  .mark {
-    font: 700 1rem var(--mono); letter-spacing: .18em; text-transform: uppercase;
-  }
+  .mark { font: 700 1rem var(--mono); letter-spacing: .18em; text-transform: uppercase; }
   .mark .tick {
     display: inline-block; width: .5em; height: .5em; border-radius: 50%;
-    background: var(--brass); margin-left: .35em; vertical-align: baseline;
+    background: var(--brass); margin-left: .35em;
   }
-  header nav { display: flex; flex-wrap: wrap; gap: .5rem 1.4rem; justify-content: flex-end; }
-  header nav a { font-size: .95rem; color: var(--ink); }
+  header a.gh { font-size: .95rem; color: var(--ink); }
 
-  /* ---------- hero ---------- */
-  .hero { padding-block: 4.5rem 3.5rem; }
+  /* ---------- hero: the moment ---------- */
+  .hero {
+    padding-block: 4rem 4.5rem;
+    display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr);
+    gap: 3rem; align-items: center;
+  }
   .eyebrow {
     font: 600 .78rem var(--mono); letter-spacing: .22em; text-transform: uppercase;
     color: var(--feather); margin-bottom: 1.2rem;
   }
   h1 {
-    font: 800 clamp(2.1rem, 5.4vw, 3.6rem)/1.12 var(--mono);
-    letter-spacing: -.03em; max-width: 21ch;
+    font: 800 clamp(2.2rem, 5.6vw, 3.4rem)/1.12 var(--mono);
+    letter-spacing: -.03em;
   }
   h1 .quiet { color: var(--feather); }
-  .hero p.lede {
-    max-width: 44rem; margin-top: 1.4rem; font-size: 1.15rem; color: var(--ink);
-  }
-  .hero p.list-of-one {
-    margin-top: .9rem; color: var(--feather);
-  }
-  .cta-row { margin-top: 2rem; display: flex; gap: 1rem; flex-wrap: wrap; }
+  .lede { margin-top: 1.3rem; font-size: 1.13rem; max-width: 34rem; }
+  .list-of-one { margin-top: .9rem; color: var(--feather); }
+  .cta-row { margin-top: 1.9rem; display: flex; gap: 1rem; flex-wrap: wrap; align-items: center; }
   .btn {
     display: inline-block; padding: .7rem 1.15rem; border-radius: .45rem;
     font: 600 .95rem var(--mono); text-decoration: none;
@@ -93,57 +85,38 @@
   .btn.ghost { border: 1.5px solid var(--rule); color: var(--ink); }
   .btn.ghost:hover { border-color: var(--brass); }
 
-  /* ---------- the hour strikes: curl -> notification ---------- */
-  .stage {
-    margin-top: 3.2rem;
-    display: grid; grid-template-columns: minmax(0, 1.15fr) auto minmax(0, 1fr);
-    align-items: center; gap: 1.2rem;
-  }
-  .term {
-    background: var(--pine); color: #dfe7df; border: 1px solid var(--pine-deep);
-    border-radius: .6rem; padding: 1.05rem 1.2rem; font: .86rem/1.7 var(--mono);
-    overflow-x: auto; white-space: pre;
-  }
-  .term .cmt { color: #8fa596; }
-  .term .str { color: var(--brass-bright); }
-  .term .out { color: #9fb8a6; }
-  .thread {
-    font: 700 1.2rem var(--mono); color: var(--brass); white-space: nowrap;
-    text-align: center; user-select: none;
-  }
+  /* the striking clock: a day of alerts, arriving */
+  .moments { display: grid; gap: .8rem; }
   .notif {
-    background: var(--card); border-radius: 1rem; padding: .95rem 1.1rem;
-    box-shadow: 0 10px 30px rgba(20, 35, 27, .16), 0 1px 0 rgba(20,35,27,.05);
-    display: grid; grid-template-columns: auto 1fr auto; gap: .8rem; align-items: start;
-    transform-origin: 85% -20%;
+    background: var(--card); border-radius: .9rem; padding: .85rem 1rem;
+    box-shadow: 0 8px 26px rgba(20, 35, 27, .14), 0 1px 0 rgba(20,35,27,.05);
+    display: grid; grid-template-columns: auto 1fr auto; gap: .75rem; align-items: center;
   }
   .notif .appicon {
-    width: 2.3rem; height: 2.3rem; border-radius: .55rem; background: var(--pine);
-    display: grid; place-items: center; position: relative;
+    width: 2.1rem; height: 2.1rem; border-radius: .5rem; background: var(--pine);
+    display: grid; place-items: center;
   }
-  .notif .appicon svg { display: block; }
-  .notif .badge {
-    position: absolute; top: -.35rem; right: -.35rem; min-width: 1.15rem; height: 1.15rem;
-    border-radius: .6rem; background: #e03e3e; color: #fff; font: 700 .7rem/1.15rem var(--sans);
-    text-align: center; padding-inline: .25rem;
-  }
-  .notif b { font-size: .95rem; display: block; }
-  .notif .body { font-size: .9rem; color: var(--feather); }
-  .notif time { font-size: .78rem; color: var(--feather); }
+  .notif b { font-size: .92rem; display: block; }
+  .notif .body { font-size: .87rem; color: var(--feather); }
+  .notif time { font-size: .75rem; color: var(--feather); align-self: start; }
   .replay {
-    margin-top: .8rem; background: none; border: none; padding: 0;
+    margin-top: .2rem; background: none; border: none; padding: 0;
     font: 600 .82rem var(--mono); color: var(--brass); cursor: pointer;
-    text-decoration: underline; text-underline-offset: 3px;
+    text-decoration: underline; text-underline-offset: 3px; justify-self: start;
   }
 
   @media (prefers-reduced-motion: no-preference) {
-    .notif.armed { opacity: 0; }
-    .notif.strike {
-      animation: cuckoo .8s cubic-bezier(.2, 1.6, .35, 1) .15s forwards;
+    .moments.armed .notif { opacity: 0; }
+    .moments.strike .notif {
+      animation: cuckoo .7s cubic-bezier(.2, 1.5, .35, 1) forwards;
     }
+    .moments.strike .notif:nth-child(1) { animation-delay: .1s; }
+    .moments.strike .notif:nth-child(2) { animation-delay: .55s; }
+    .moments.strike .notif:nth-child(3) { animation-delay: 1.0s; }
+    .moments.strike .notif:nth-child(4) { animation-delay: 1.45s; }
     @keyframes cuckoo {
-      0%   { opacity: 0; transform: translateY(-1.4rem) scale(.86); }
-      70%  { opacity: 1; transform: translateY(.25rem) scale(1.02); }
+      0%   { opacity: 0; transform: translateY(-1.1rem) scale(.9); }
+      70%  { opacity: 1; transform: translateY(.2rem) scale(1.01); }
       100% { opacity: 1; transform: none; }
     }
     .mark .tick { animation: pulse 60s linear infinite; }
@@ -153,203 +126,149 @@
     }
   }
 
-  @media (max-width: 54rem) {
-    .stage { grid-template-columns: 1fr; }
-    .thread { transform: rotate(90deg); margin-block: -.2rem; }
-    .notif { transform-origin: 50% -20%; }
-  }
-
   /* ---------- sections ---------- */
-  section { padding-block: 3.4rem; border-top: 1px solid var(--rule); }
+  section { padding-block: 3.2rem; border-top: 1px solid var(--rule); }
   h2 {
-    font: 700 1.05rem var(--mono); letter-spacing: .14em; text-transform: uppercase;
-    color: var(--feather); margin-bottom: 1.6rem;
+    font: 700 1rem var(--mono); letter-spacing: .14em; text-transform: uppercase;
+    color: var(--feather); margin-bottom: 1.5rem;
   }
   h2::before { content: "// "; color: var(--brass); }
-  .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: 2rem; }
-  .prose { max-width: 46rem; }
-  .prose + .prose { margin-top: 1rem; }
-  .prose b { font-weight: 650; }
+  .punches { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: 2rem; }
+  .punch b { font: 650 1.05rem var(--sans); display: block; margin-bottom: .35rem; }
+  .punch p { color: var(--feather); font-size: .97rem; }
 
-  /* payload specimen */
-  .specimen { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 2rem; align-items: start; }
-  @media (max-width: 54rem) { .specimen { grid-template-columns: 1fr; } }
-  .anno { font-size: .95rem; display: grid; gap: 1rem; align-content: start; }
-  .anno div { padding-left: .9rem; border-left: 2px solid var(--brass); }
-  .anno code { font: .85em var(--mono); background: color-mix(in srgb, var(--rule) 45%, transparent); padding: .1em .3em; border-radius: .25em; }
+  .term {
+    background: var(--pine); color: #dfe7df; border: 1px solid var(--pine-deep);
+    border-radius: .6rem; padding: 1.05rem 1.2rem; font: .86rem/1.7 var(--mono);
+    overflow-x: auto; white-space: pre;
+  }
+  .term .cmt { color: #8fa596; }
+  .term .str { color: var(--brass-bright); }
+  .term .out { color: #9fb8a6; }
+  .caption { margin-top: 1rem; color: var(--feather); max-width: 42rem; }
 
-  /* steps */
+  .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: 2rem; counter-reset: step; }
   .step { counter-increment: step; }
   .step::before {
     content: counter(step, decimal-leading-zero);
     font: 700 .9rem var(--mono); color: var(--brass); display: block; margin-bottom: .5rem;
   }
-  .steps { counter-reset: step; }
-  .step h3 { font: 650 1.05rem var(--sans); margin-bottom: .4rem; }
+  .step b { font: 650 1.03rem var(--sans); display: block; margin-bottom: .35rem; }
   .step p { font-size: .95rem; color: var(--feather); }
-  .step .term { margin-top: .8rem; font-size: .8rem; }
+  .step .term { margin-top: .8rem; font-size: .78rem; }
 
-  /* friction */
-  .friction li { margin-bottom: .85rem; max-width: 46rem; }
-  .friction b { font-weight: 650; }
-  .friction ul { padding-left: 1.1rem; }
-
-  /* comparison */
-  table { border-collapse: collapse; width: 100%; min-width: 42rem; font-size: .93rem; }
-  th, td { text-align: left; padding: .7rem .9rem .7rem 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
-  th { font: 600 .78rem var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--feather); }
-  td:first-child { font: 600 .9rem var(--mono); white-space: nowrap; }
-  .table-scroll { overflow-x: auto; }
-  .tnote { margin-top: 1rem; color: var(--feather); font-size: .95rem; max-width: 46rem; }
-
-  /* permanence */
-  .rules { display: grid; grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr)); gap: 1.4rem; }
-  .rule-card {
-    border: 1.5px solid var(--rule); border-radius: .7rem; padding: 1.3rem 1.4rem;
-    background: color-mix(in srgb, var(--card) 55%, transparent);
-  }
-  .rule-card h3 { font: 700 1rem var(--mono); margin-bottom: .5rem; }
-  .rule-card p { font-size: .95rem; color: var(--feather); }
-
-  /* fit */
-  .fit ul { padding-left: 1.1rem; }
-  .fit li { margin-bottom: .5rem; font-size: .97rem; }
-  .fit h3 { font: 650 1rem var(--sans); margin-bottom: .8rem; }
+  .fineprint { color: var(--feather); max-width: 44rem; }
+  .fineprint b { color: var(--ink); font-weight: 650; }
 
   footer {
-    border-top: 1px solid var(--rule); padding-block: 2.4rem 3.5rem;
+    border-top: 1px solid var(--rule); padding-block: 2.2rem 3.2rem;
     color: var(--feather); font-size: .95rem;
   }
   footer .wrap { display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+
+  @media (max-width: 54rem) {
+    .hero { grid-template-columns: 1fr; padding-block: 3rem; gap: 2.4rem; }
+  }
 </style>
 </head>
 <body>
 
 <header class="wrap">
   <div class="mark">kukuroo<span class="tick" aria-hidden="true"></span></div>
-  <nav>
-    <a href="#payload">The payload</a>
-    <a href="#setup">Setup</a>
-    <a href="#honesty">The fine print</a>
-    <a href="https://github.com/saiday/kukuroo">GitHub</a>
-  </nav>
+  <a class="gh" href="https://github.com/saiday/kukuroo">GitHub</a>
 </header>
 
 <main>
   <div class="hero wrap">
-    <p class="eyebrow">Web push · Cloudflare Workers · MIT</p>
-    <h1>Send yourself a push.<br><span class="quiet">Host nothing.</span></h1>
-    <p class="lede">
-      Kukuroo is a Web Push gateway that runs entirely on a free Cloudflare
-      Worker. Enrol your phone once, keep your own keys, and anything that can
-      speak HTTP can put four words on your lock screen: a finished build, a
-      fallen server, a price that finally dropped.
-    </p>
-    <p class="list-of-one">You need a Cloudflare account. That's the list.</p>
-    <div class="cta-row">
-      <a class="btn solid" href="https://github.com/saiday/kukuroo#setup">Get started</a>
-      <a class="btn ghost" href="https://github.com/saiday/kukuroo#two-things-are-permanent">Read the two rules first</a>
+    <div>
+      <p class="eyebrow">Web push · Cloudflare Workers · MIT</p>
+      <h1>The moment it happens,<br><span class="quiet">your phone knows.</span></h1>
+      <p class="lede">
+        A build finishes. A price drops. A disk fills. Kukuroo turns one HTTP
+        call into a lock-screen notification, from a free Cloudflare Worker
+        you deploy once and forget: no server, no vendor in the middle, no app
+        to build.
+      </p>
+      <p class="list-of-one">You need a Cloudflare account. That's the list.</p>
+      <div class="cta-row">
+        <a class="btn solid" href="https://github.com/saiday/kukuroo#setup">Install Kukuroo</a>
+        <a class="btn ghost" href="https://github.com/saiday/kukuroo#two-things-are-permanent">Read the two rules first</a>
+      </div>
     </div>
 
-    <div class="stage">
-      <div class="term" aria-label="A curl command that sends a notification"><span class="cmt"># from a cron job, a CI step, your backend, anywhere</span>
-curl -X POST https://push.example.com/push/send \
-  -H <span class="str">"authorization: Bearer $KUKUROO_SEND_TOKEN"</span> \
-  -d <span class="str">'{"notification":{"title":"Deploy finished",
-       "body":"main to production, 42s",
-       "navigate":"https://push.example.com/deploys"}}'</span>
-<span class="out">{"delivered":1,"removed":0,"failures":[]}</span></div>
-      <div class="thread" aria-hidden="true">--&gt;</div>
-      <div>
-        <div class="notif armed" id="notif" role="img" aria-label="A lock-screen notification: Deploy finished, main to production, 42 seconds">
-          <div class="appicon" aria-hidden="true">
-            <svg width="22" height="22" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="none" stroke="#c9a254" stroke-width="1.4"/><circle cx="8" cy="8" r="1.3" fill="#c9a254"/><rect x="7.45" y="3" width="1.1" height="5" rx=".55" fill="#c9a254"/></svg>
-            <span class="badge">1</span>
-          </div>
-          <div>
-            <b>Deploy finished</b>
-            <span class="body">main to production, 42s</span>
-          </div>
-          <time>now</time>
+    <div>
+      <div class="moments armed" id="moments" role="img"
+           aria-label="Lock-screen notifications: a backup finished, a price dropped, a deploy failed, a disk is filling up">
+        <div class="notif">
+          <div class="appicon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="none" stroke="#c9a254" stroke-width="1.4"/><circle cx="8" cy="8" r="1.3" fill="#c9a254"/><rect x="7.45" y="3" width="1.1" height="5" rx=".55" fill="#c9a254"/></svg></div>
+          <div><b>Backup finished</b><span class="body">nightly to B2, 2.3 GB in 41s</span></div>
+          <time>02:00</time>
         </div>
-        <button class="replay" id="replay" type="button" hidden>Ring it again</button>
+        <div class="notif">
+          <div class="appicon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="none" stroke="#c9a254" stroke-width="1.4"/><circle cx="8" cy="8" r="1.3" fill="#c9a254"/><rect x="7.45" y="3" width="1.1" height="5" rx=".55" fill="#c9a254"/></svg></div>
+          <div><b>Price drop</b><span class="body">X100V hit ¥89,000 on Mercari</span></div>
+          <time>07:14</time>
+        </div>
+        <div class="notif">
+          <div class="appicon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="none" stroke="#c9a254" stroke-width="1.4"/><circle cx="8" cy="8" r="1.3" fill="#c9a254"/><rect x="7.45" y="3" width="1.1" height="5" rx=".55" fill="#c9a254"/></svg></div>
+          <div><b>Deploy failed</b><span class="body">main: tests red at step 4 of 7</span></div>
+          <time>11:52</time>
+        </div>
+        <div class="notif">
+          <div class="appicon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="none" stroke="#c9a254" stroke-width="1.4"/><circle cx="8" cy="8" r="1.3" fill="#c9a254"/><rect x="7.45" y="3" width="1.1" height="5" rx=".55" fill="#c9a254"/></svg></div>
+          <div><b>Disk almost full</b><span class="body">vps-tokyo, /var at 91%</span></div>
+          <time>16:40</time>
+        </div>
+        <button class="replay" id="replay" type="button" hidden>Ring them again</button>
       </div>
     </div>
   </div>
 
-  <section id="why">
-    <div class="wrap cols">
-      <div>
-        <h2>No server</h2>
-        <p>
-          ntfy and Gotify are good software, and both need a host, a domain,
-          TLS, and a process that stays up. Kukuroo needs none of that: it is a
-          Worker and a KV namespace, deployed once, asleep until something has
-          news. Static requests cost nothing, and the free plan comfortably
-          covers a personal fleet of devices.
-        </p>
+  <section>
+    <div class="wrap punches">
+      <div class="punch">
+        <b>No server to keep alive.</b>
+        <p>Kukuroo is a free Cloudflare Worker plus KV. Deploy it once; there
+        is no host, no TLS to renew, no process to babysit at 3am.</p>
       </div>
-      <div>
-        <h2>No vendor</h2>
-        <p>
-          The VAPID keypair is generated on your machine and lives in your
-          Worker. The payload is encrypted to a key only your device holds
-          (RFC&nbsp;8291), so the push service relays ciphertext it cannot
-          read. Nobody has a dashboard with your notification history on it,
-          because there is nowhere for one to be.
-        </p>
+      <div class="punch">
+        <b>No company in the middle.</b>
+        <p>Your keys live in your Worker, and the message is encrypted to your
+        device. Nobody's dashboard ever sees your alerts.</p>
       </div>
-      <div>
-        <h2>No app</h2>
-        <p>
-          Since iOS 18.4, Safari renders Declarative Web Push on its own: no
-          App Store, no $99 a year, no service worker to debug. This is a
-          property of the platform, not of Kukuroo; Kukuroo's job is shipping
-          the server half and the enrolment page so you never think about
-          either.
-        </p>
+      <div class="punch">
+        <b>No app to build.</b>
+        <p>Your phone has rendered these natively since iOS 18.4. No App
+        Store, no $99 a year for four words on a lock screen.</p>
       </div>
     </div>
   </section>
 
-  <section id="payload">
+  <section>
     <div class="wrap">
-      <h2>The whole message fits on your screen</h2>
-      <div class="specimen">
-        <div class="term" aria-label="The declarative web push payload"><span class="cmt">// what actually travels, encrypted end to end</span>
-{
-  <span class="str">"web_push"</span>: 8030,
-  <span class="str">"notification"</span>: {
-    <span class="str">"title"</span>: <span class="str">"Deploy finished"</span>,
-    <span class="str">"body"</span>: <span class="str">"main to production, 42s"</span>,
-    <span class="str">"navigate"</span>: <span class="str">"https://push.example.com/deploys"</span>,
-    <span class="str">"tag"</span>: <span class="str">"deploys"</span>
-  },
-  <span class="str">"app_badge"</span>: 1
-}</div>
-        <div class="anno">
-          <div><code>web_push: 8030</code> marks the message as declarative. The
-          browser renders it itself; no JavaScript wakes up.</div>
-          <div><code>navigate</code> must be absolute, or WebKit silently drops
-          the whole message. Kukuroo rejects it before sending, along with every
-          other mistake that fails without an error.</div>
-          <div><code>app_badge</code> moved position between Safari releases and
-          Apple never documented the move. Kukuroo emits it in both positions so
-          you never have to know.</div>
-        </div>
-      </div>
+      <h2>The whole integration</h2>
+      <div class="term" aria-label="A curl command that sends a notification"><span class="cmt"># from cron, CI, a Raspberry Pi, your backend, a shell alias</span>
+curl -X POST https://push.example.com/push/send \
+  -H <span class="str">"authorization: Bearer $KUKUROO_SEND_TOKEN"</span> \
+  -d <span class="str">'{"notification":{"title":"Backup finished",
+       "body":"nightly to B2, 2.3 GB in 41s",
+       "navigate":"https://push.example.com/"}}'</span>
+<span class="out">{"delivered":1,"removed":0,"failures":[]}</span></div>
+      <p class="caption">
+        That is not the quick start. That is the entire integration: anything
+        that can make an HTTP call can ring your phone.
+      </p>
     </div>
   </section>
 
-  <section id="setup">
+  <section>
     <div class="wrap">
-      <h2>One-time setup, three moves</h2>
-      <div class="cols steps">
+      <h2>Install once, in three moves</h2>
+      <div class="steps">
         <div class="step">
-          <h3>Deploy the Worker</h3>
-          <p>Copy the template, pick your origin, deploy. The KV namespace
-          provisions itself; one command generates every secret and keeps the
-          only copy with you.</p>
+          <b>Deploy your Worker</b>
+          <p>Copy the template, generate your keys with one command, deploy.
+          Storage provisions itself.</p>
           <div class="term">npm install kukuroo
 cp -r node_modules/kukuroo/templates/standalone my-kukuroo
 cd my-kukuroo &amp;&amp; npm install
@@ -357,137 +276,57 @@ npx kukuroo init
 npx wrangler deploy</div>
         </div>
         <div class="step">
-          <h3>Enrol your phone</h3>
-          <p>Open the page, Add to Home Screen, open it from the icon, enter
-          your invite code. Thirty seconds, once per device, and the one manual
-          step Apple will not let anyone script away.</p>
+          <b>Put it on your Home Screen</b>
+          <p>Open your new page in Safari, Add to Home Screen, type the invite
+          code. Thirty seconds, once per device. That is Apple's one rule, and
+          the only manual step in the whole thing.</p>
         </div>
         <div class="step">
-          <h3>POST when something happens</h3>
-          <p>One bearer token, one HTTP call, from anything: cron, CI, a
-          Raspberry Pi, your backend on AWS. The response tells you exactly how
-          many devices the push service accepted it for.</p>
+          <b>POST when something happens</b>
+          <p>Drop the curl above into whatever should be able to reach you.
+          The response tells you exactly how many devices it reached.</p>
         </div>
       </div>
     </div>
   </section>
 
-  <section id="honesty">
+  <section>
     <div class="wrap">
-      <h2>The fine print, up front</h2>
-      <ul class="friction">
-        <li><b>iOS 18.4 or later.</b> Declarative Web Push shipped in Safari
-        18.4, March 2025. On the desktop, macOS Safari works from a normal
-        tab.</li>
-        <li><b>The Home Screen step is mandatory on iOS.</b> Web push does not
-        exist in a Safari tab. It is a one-time, thirty-second setup, and it is
-        the honest reason this pitch is not "just host a page".</li>
-        <li><b>Deleting the icon deletes the subscription, silently.</b> If the
-        notifications matter, send yourself a daily ping; the absence of a
-        scheduled message is the only reliable signal the channel died.</li>
-        <li><b>The free plan has a ceiling.</b> One send reaches up to 50
-        devices before Cloudflare's subrequest limit, with CPU close behind.
-        For a personal fleet that is comfortable; for a crowd it is not, and
-        the README gives the measured numbers rather than an adjective.</li>
-        <li><b>It is early.</b> Tested end to end against a real iPhone, and
-        installed so far by exactly one person, who wrote it.</li>
-      </ul>
-    </div>
-  </section>
-
-  <section id="compare">
-    <div class="wrap">
-      <h2>Where it sits</h2>
-      <div class="table-scroll">
-        <table>
-          <thead>
-            <tr><th scope="col">Project</th><th scope="col">Runs on</th><th scope="col">You keep a server up</th><th scope="col">The trade</th></tr>
-          </thead>
-          <tbody>
-            <tr><td>Kukuroo</td><td>A free Cloudflare Worker</td><td>No</td><td>One manual Home Screen step, Safari-family devices</td></tr>
-            <tr><td>ntfy</td><td>Your server, or ntfy.sh</td><td>Yes, or use their cloud</td><td>Polished app-like UI; wants a host, domain, TLS</td></tr>
-            <tr><td>go-notify-server</td><td>Docker + SQLite</td><td>Yes</td><td>Declarative-first like Kukuroo; bring your own PWA</td></tr>
-            <tr><td>Pushover</td><td>Their cloud</td><td>No</td><td>Their app and their servers in the path, $5 once</td></tr>
-          </tbody>
-        </table>
-      </div>
-      <p class="tnote">
-        ntfy is excellent if you are happy hosting; go-notify-server got to
-        declarative-first before this project did. Kukuroo exists for the
-        remaining case: you want your own keys and nobody's server, not even
-        yours.
+      <h2>The fine print</h2>
+      <p class="fineprint">
+        <b>Told straight:</b> receiving needs Safari, iOS 18.4 or later on a
+        phone, and one send reaches about 50 devices on the free plan. Every
+        limit and sharp edge is written down plainly in
+        <a href="https://github.com/saiday/kukuroo#readme">the README</a>,
+        before you deploy anything, because that is where trust comes from.
       </p>
-    </div>
-  </section>
-
-  <section id="rules">
-    <div class="wrap">
-      <h2>Two things are permanent</h2>
-      <div class="rules">
-        <div class="rule-card">
-          <h3>1 · The origin</h3>
-          <p>A subscription is bound to the origin it was created on. Change
-          the hostname later and every device goes quiet, with no error
-          anywhere. Decide the address first; the template shuts the doors you
-          are not using.</p>
-        </div>
-        <div class="rule-card">
-          <h3>2 · The VAPID keypair</h3>
-          <p>Regenerate it and every subscription silently stops matching.
-          Kukuroo generates it once, keeps the only copy with you, and refuses
-          to overwrite it, because this is the mistake that cannot be
-          walked back.</p>
-        </div>
-      </div>
-      <p class="tnote">The README opens with these <a href="https://github.com/saiday/kukuroo#two-things-are-permanent">before any code</a>, because people hit them before they write any.</p>
-    </div>
-  </section>
-
-  <section id="fit">
-    <div class="wrap cols fit">
-      <div>
-        <h3>Built for</h3>
-        <ul>
-          <li>Personal automation that should be able to page you</li>
-          <li>Workers you already run and want notifications from, without a
-          notification vendor</li>
-          <li>Anyone who priced an iOS app for one alert and closed the tab</li>
-        </ul>
-      </div>
-      <div>
-        <h3>Not for</h3>
-        <ul>
-          <li>Consumer-scale product notifications</li>
-          <li>Multi-tenant systems</li>
-          <li>Android and iOS parity today</li>
-        </ul>
-      </div>
     </div>
   </section>
 </main>
 
 <footer>
   <div class="wrap">
-    <span><a href="https://github.com/saiday/kukuroo/blob/main/LICENSE">MIT licence</a>. A Cloudflare Worker, a KV namespace, and no third wheel.</span>
+    <span><a href="https://github.com/saiday/kukuroo/blob/main/LICENSE">MIT</a>.
+    Installed so far by exactly one person, who wrote it. Be the second.</span>
     <span><a href="https://github.com/saiday/kukuroo">github.com/saiday/kukuroo</a></span>
   </div>
 </footer>
 
 <script>
-  // The hour strikes once on arrival, and on request after that.
-  var notif = document.getElementById("notif");
+  // The hours strike once on arrival, and on request after that.
+  var moments = document.getElementById("moments");
   var replay = document.getElementById("replay");
   var animated = matchMedia("(prefers-reduced-motion: no-preference)").matches;
   if (animated) {
-    requestAnimationFrame(function () { notif.classList.add("strike"); });
+    requestAnimationFrame(function () { moments.classList.add("strike"); });
     replay.hidden = false;
     replay.addEventListener("click", function () {
-      notif.classList.remove("strike");
-      void notif.offsetWidth; // restart the animation from zero
-      notif.classList.add("strike");
+      moments.classList.remove("strike");
+      void moments.offsetWidth;
+      moments.classList.add("strike");
     });
   } else {
-    notif.classList.remove("armed");
+    moments.classList.remove("armed");
   }
 </script>
 </body>
