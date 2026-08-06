@@ -28,6 +28,9 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+      # enablement needs the workflow token to have admin on the repo. True on
+      # a personal repo; if this ever moves into an org, the first run 403s
+      # here, and the fix is enabling Pages once by hand in Settings.
       - uses: actions/configure-pages@v5
         with:
           enablement: true

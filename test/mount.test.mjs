@@ -95,7 +95,11 @@ const noCorsPreflight = await kukuroo.handle(req("/push/subscribe", {
   method: "OPTIONS",
   headers: { origin: "https://www.example.com", "access-control-request-method": "POST" },
 }), env);
-ok("with no allowed origins, a preflight is 405", noCorsPreflight.status === 405);
+const noCorsBody = await noCorsPreflight.json();
+ok("with no allowed origins, a real preflight is told CORS is off",
+  noCorsPreflight.status === 403 && noCorsBody.error.includes("not enabled"));
+ok("a bare OPTIONS with no preflight headers stays a plain 405",
+  (await kukuroo.handle(req("/push/subscribe", { method: "OPTIONS" }), env)).status === 405);
 const bareKey = await kukuroo.handle(req("/push/public-key", { headers: { origin: "https://www.example.com" } }), env);
 ok("with no allowed origins, no CORS header is emitted",
   bareKey.headers.get("access-control-allow-origin") === null);

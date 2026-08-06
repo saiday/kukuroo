@@ -28,8 +28,9 @@ anything holding the send token              the platform push service
 **Status: early, and not yet on npm.** The code works and is tested end to end
 against a real iPhone, but it has been installed by exactly one person, who
 wrote it. Until `0.1.0` is published, substitute `github:saiday/kukuroo`
-wherever the instructions say `kukuroo` (including the copied template's
-dependency). Expect rough edges, and please report them.
+wherever the instructions say `kukuroo`, in both the top-level install and the
+`dependencies` of the copied template's `package.json`. Expect rough edges,
+and please report them.
 
 The two permanence rules come first because they are the two mistakes that
 cannot be undone, and people hit them before they write any code.

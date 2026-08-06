@@ -101,12 +101,19 @@ function bearerToken(request: Request): string | null {
  * default port does not silently fail to match. There is no wildcard: the
  * list of pages that may enrol a device is short, and writing it out is the
  * point.
+ *
+ * The parse cache lives per mount, not per module, so two route sets with
+ * different lists cannot thrash each other, and "the junk entry is reported
+ * once" is a promise the code keeps rather than a comment that hopes.
  */
-let originsCache: { raw: string; origins: string[] } | undefined;
+interface OriginsCache {
+  raw?: string;
+  origins: string[];
+}
 
-function parseAllowedOrigins(env: KukurooEnv): string[] {
+function parseAllowedOrigins(env: KukurooEnv, cache: OriginsCache): string[] {
   const raw = env.KUKUROO_ALLOWED_ORIGINS ?? "";
-  if (originsCache?.raw === raw) return originsCache.origins;
+  if (cache.raw === raw) return cache.origins;
 
   const origins: string[] = [];
   for (const entry of raw.split(",")) {
@@ -123,24 +130,31 @@ function parseAllowedOrigins(env: KukurooEnv): string[] {
       );
     }
   }
-  originsCache = { raw, origins };
+  cache.raw = raw;
+  cache.origins = origins;
   return origins;
 }
 
-function corsFor(request: Request, env: KukurooEnv): Record<string, string> {
+function corsFor(request: Request, env: KukurooEnv, cache: OriginsCache): Record<string, string> {
   const origin = request.headers.get("origin");
-  if (origin === null || !parseAllowedOrigins(env).includes(origin)) return {};
+  if (origin === null || !parseAllowedOrigins(env, cache).includes(origin)) return {};
   // Echo the one origin rather than `*`, and Vary so shared caches key on it.
   return { "access-control-allow-origin": origin, vary: "origin" };
 }
 
 /**
  * Answer a preflight, or say plainly why not. A disallowed origin gets a 403
- * naming the variable, because the alternative the developer sees is an
- * opaque CORS shrug in the browser console and nothing anywhere else.
+ * naming the variable, and a preflight against a deployment with CORS off
+ * gets told that CORS is off, because the alternative the developer sees is
+ * an opaque shrug in the browser console and nothing anywhere else.
  */
-function preflight(request: Request, env: KukurooEnv, allowMethods: string): Response {
-  const cors = corsFor(request, env);
+function preflight(
+  request: Request,
+  env: KukurooEnv,
+  cache: OriginsCache,
+  allowMethods: string,
+): Response {
+  const cors = corsFor(request, env, cache);
   if ("access-control-allow-origin" in cors) {
     return new Response(null, {
       status: 204,
@@ -153,14 +167,26 @@ function preflight(request: Request, env: KukurooEnv, allowMethods: string): Res
     });
   }
   const origin = request.headers.get("origin");
-  if (origin !== null && parseAllowedOrigins(env).length > 0) {
+  if (origin !== null && parseAllowedOrigins(env, cache).length > 0) {
     return json({ error: `origin ${origin} is not in KUKUROO_ALLOWED_ORIGINS` }, 403);
+  }
+  if (request.headers.get("access-control-request-method") !== null) {
+    // A genuine preflight, and CORS is not configured. "Method not allowed"
+    // would read as a routing bug; name the actual gap instead.
+    return json(
+      {
+        error:
+          "cross-origin calls are not enabled: KUKUROO_ALLOWED_ORIGINS is not set on this Worker",
+      },
+      403,
+    );
   }
   return json({ error: "method not allowed" }, 405);
 }
 
 export function mountKukuroo(options: MountOptions = {}): KukurooRoutes {
   const prefix = (options.prefix ?? "/push").replace(/\/+$/, "");
+  const originsCache: OriginsCache = { origins: [] };
 
   return {
     prefix,
@@ -186,9 +212,9 @@ export function mountKukuroo(options: MountOptions = {}): KukurooRoutes {
       // Serving it means a deployment has one VAPID value to configure instead
       // of two, which removes the only way they can disagree.
       if (route === "/public-key") {
-        if (request.method === "OPTIONS") return preflight(request, env, "GET");
+        if (request.method === "OPTIONS") return preflight(request, env, originsCache, "GET");
         if (request.method !== "GET") return json({ error: "method not allowed" }, 405);
-        const cors = corsFor(request, env);
+        const cors = corsFor(request, env, originsCache);
         try {
           const { publicKeyB64 } = await importVapidKeys(
             env.KUKUROO_VAPID_PRIVATE,
@@ -202,11 +228,11 @@ export function mountKukuroo(options: MountOptions = {}): KukurooRoutes {
       }
 
       if (route === "/subscribe") {
-        if (request.method === "OPTIONS") return preflight(request, env, "POST");
+        if (request.method === "OPTIONS") return preflight(request, env, originsCache, "POST");
         // CORS headers ride on every response from here down, including the
         // 4xx ones: without them the calling page cannot read the error it
         // needs to display.
-        const cors = corsFor(request, env);
+        const cors = corsFor(request, env, originsCache);
         if (request.method !== "POST") return json({ error: "method not allowed" }, 405, cors);
         return handleSubscribe(request, env, cors);
       }
