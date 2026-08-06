@@ -62,6 +62,17 @@ export async function send(env: KukurooEnv, options: SendOptions): Promise<SendR
   });
   const plaintext = utf8(json);
 
+  // Validated once, before the loop, because it is an env-level mistake: a
+  // malformed subject would otherwise surface as one failure per device, or
+  // worse, as Apple's unexplained 400 on every send. RFC 8292 wants a mailto:
+  // or https: URI here.
+  if (env.KUKUROO_VAPID_SUBJECT && !/^(mailto:|https:)/.test(env.KUKUROO_VAPID_SUBJECT)) {
+    throw new Error(
+      `KUKUROO_VAPID_SUBJECT must be a mailto: or https: URI; got ` +
+        `${JSON.stringify(env.KUKUROO_VAPID_SUBJECT)}`,
+    );
+  }
+
   const subscriptions = await listSubscriptions(env.KUKUROO_SUBS);
   const result: SendResult = { delivered: 0, removed: 0, failures: [] };
 

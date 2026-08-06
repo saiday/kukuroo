@@ -72,6 +72,11 @@ for (const [label, material] of [
   const claims = JSON.parse(new TextDecoder().decode(b64urlDecode(p)));
   ok(`VAPID import (${label}) signs a verifiable ES256 token`, verified);
   ok(`VAPID aud is the endpoint origin (${label})`, claims.aud === "https://web.push.apple.com");
+  const header = JSON.parse(new TextDecoder().decode(b64urlDecode(h)));
+  ok(`JWT header says ES256/JWT (${label})`, header.alg === "ES256" && header.typ === "JWT");
+  const now = Math.floor(Date.now() / 1000);
+  ok(`exp is ahead and inside RFC 8292's 24h (${label})`, claims.exp > now && claims.exp <= now + 24 * 60 * 60);
+  ok(`sub is present (${label})`, typeof claims.sub === "string" && claims.sub.length > 0);
 }
 
 // ---- deriving the public key, so it need not be configured -----------------

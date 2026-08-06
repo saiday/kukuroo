@@ -56,6 +56,17 @@ export async function encryptPayload(
     throw new Error(`subscription auth secret is not 16 bytes (${authSecret.length} bytes)`);
   }
 
+  // RFC 8188 requires the record to fit the advertised rs: plaintext, the
+  // delimiter byte, and the 16-byte tag. The send() path enforces the ~3,900
+  // byte declarative budget long before this; the guard keeps the invariant
+  // true for any other caller instead of silently emitting an oversize record.
+  if (plaintextBody.length > RECORD_SIZE - 18) {
+    throw new Error(
+      `plaintext is ${plaintextBody.length} bytes; a single ${RECORD_SIZE}-byte record ` +
+        `holds at most ${RECORD_SIZE - 18}`,
+    );
+  }
+
   const salt = crypto.getRandomValues(new Uint8Array(16));
 
   const ephemeral = (await crypto.subtle.generateKey({ name: "ECDH", namedCurve: "P-256" }, true, [

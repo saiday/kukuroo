@@ -213,8 +213,8 @@ export function mountKukuroo(options: MountOptions = {}): KukurooRoutes {
       // of two, which removes the only way they can disagree.
       if (route === "/public-key") {
         if (request.method === "OPTIONS") return preflight(request, env, originsCache, "GET");
-        if (request.method !== "GET") return json({ error: "method not allowed" }, 405);
         const cors = corsFor(request, env, originsCache);
+        if (request.method !== "GET") return json({ error: "method not allowed" }, 405, cors);
         try {
           const { publicKeyB64 } = await importVapidKeys(
             env.KUKUROO_VAPID_PRIVATE,

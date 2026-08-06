@@ -518,8 +518,10 @@ type stripping runs the tests directly.
 
 The test suite plays the part of the device: it decrypts what `encryptPayload`
 produced and verifies the VAPID token against the public key, using Node's Web
-Crypto as the user agent. A green run means a phone would have displayed the
-message, not merely that functions returned.
+Crypto as the user agent. A green run proves the cryptography round-trips byte
+for byte and the HTTP contract holds; the end-to-end check against a real
+iPhone is a manual pass, recorded in the status line above, and not something
+the suite can claim.
 
 ---
 

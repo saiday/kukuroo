@@ -351,6 +351,8 @@ curl -X POST https://push.example.com/push/send \
           provisions itself; one command generates every secret and keeps the
           only copy with you.</p>
           <div class="term">npm install kukuroo
+cp -r node_modules/kukuroo/templates/standalone my-kukuroo
+cd my-kukuroo &amp;&amp; npm install
 npx kukuroo init
 npx wrangler deploy</div>
         </div>

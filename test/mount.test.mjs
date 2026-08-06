@@ -89,6 +89,17 @@ ok("send fans out to the stored subscription", sendResult.delivered === 1 && pus
 ok("the push POST carries VAPID auth and aes128gcm",
   pushed[0].init.headers.Authorization.startsWith("vapid t=") &&
   pushed[0].init.headers["Content-Encoding"] === "aes128gcm");
+const vapidRawPub = b64url(new Uint8Array(await crypto.subtle.exportKey("raw", vapidPair.publicKey)));
+ok("the k= parameter is the sender's uncompressed public key",
+  pushed[0].init.headers.Authorization.endsWith(`k=${vapidRawPub}`));
+
+const badSubject = await kukuroo.handle(req("/push/send", {
+  method: "POST",
+  headers: { authorization: "Bearer token-token-token" },
+  body: JSON.stringify({ notification: { title: "hi", navigate: "https://push.example.com/" } }),
+}), { ...env, KUKUROO_VAPID_SUBJECT: "saiday@example.com" });
+ok("a bare-email VAPID subject is refused by name, once, before the fan-out",
+  badSubject.status === 400 && (await badSubject.json()).error.includes("KUKUROO_VAPID_SUBJECT"));
 
 // ---- CORS off (the default) ------------------------------------------------
 const noCorsPreflight = await kukuroo.handle(req("/push/subscribe", {
