@@ -11,7 +11,7 @@
     "kukuroo": "^0.1.0"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20260101.0",
+    "@cloudflare/workers-types": "^5",
     "typescript": "^5.9.3",
     "wrangler": "^4.76.0"
   }

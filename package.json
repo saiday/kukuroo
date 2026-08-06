@@ -18,12 +18,12 @@
     "LICENSE"
   ],
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20260101.0",
+    "@cloudflare/workers-types": "^5",
     "typescript": "^5.9.3"
   },
   "scripts": {
     "init": "node scripts/init.mjs init",
-    "test": "node --experimental-strip-types --no-warnings test/crypto.test.mjs",
+    "test": "node --experimental-strip-types --no-warnings test/crypto.test.mjs && node --experimental-strip-types --no-warnings test/mount.test.mjs",
     "typecheck": "tsc --noEmit"
   },
   "bin": {
