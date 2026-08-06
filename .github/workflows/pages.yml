@@ -1,0 +1,38 @@
+# Deploys site/ to GitHub Pages.
+#
+# Manual on purpose: the landing page's quickstart says `npm install kukuroo`,
+# so the page must not go live before 0.1.0 is on npm. Publish first, then run
+# this from the Actions tab, or:
+#
+#   gh workflow run pages.yml
+#
+# The first run enables Pages on the repository by itself.
+name: deploy-landing
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+        with:
+          enablement: true
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deployment
+        uses: actions/deploy-pages@v4
