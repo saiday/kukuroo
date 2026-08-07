@@ -51,20 +51,25 @@ You need a Cloudflare account (the free plan is enough; see
 [the fan-out ceiling](#how-many-devices-one-send-can-reach)), Node 22.6 or
 later, and a device on iOS 18.4+ or macOS Safari 18.5+ to receive.
 
-### Do you already serve a site from a Cloudflare Worker?
+### Standalone or mounted?
 
-One question decides the rest.
+[**Standalone**](#standalone) is its own Worker at its own address, serving the
+enrolment page it ships with: five commands, no code to write.
+[**Mounted**](#mounted) is three lines inside a Worker you already run, which
+puts the push routes on your site's origin so a notification tap lands back
+inside your site.
 
-**No** → [**Standalone**](#standalone). Kukuroo deploys as its own Worker at its
-own address and serves the enrolment page it ships with. Five commands, no code
-to write.
+Find your line:
 
-**Yes** → [**Mounted**](#mounted). Three lines in the Worker you already have.
-The push routes join your site's origin, so a notification tap lands back inside
-your site.
+- I don't run a Cloudflare Worker yet. → [**Standalone**](#standalone)
+- I run one, and notification taps should land inside my own site. →
+  [**Mounted**](#mounted)
+- I run one, but push can live on its own address, away from my site. →
+  [**Standalone**](#standalone)
 
-Neither shape has to live on your website's domain, and a static site with no
-Worker at all can still enrol devices cross-origin. If neither answer fits,
+Running a Worker does not oblige you to mount into it. Neither shape has to live
+on your website's domain, and a static site with no Worker at all can still enrol
+devices cross-origin. If none of the three lines fits,
 [Using Kukuroo with an existing
 website](#using-kukuroo-with-an-existing-website) lays out all five topologies.
 

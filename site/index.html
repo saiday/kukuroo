@@ -3,9 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Kukuroo: self-hosted web push for iOS</title>
-<meta name="description" content="A self-hosted web push module aimed at iOS. One free Cloudflare Worker, your own keys, no app to build and no notification vendor in the middle.">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3.4' fill='%23203129'/%3E%3Cpath d='M4.6 13.4V6.6a3.4 3.4 0 0 1 6.8 0v6.8z' fill='%23c9a254'/%3E%3Ccircle cx='9.8' cy='10' r='.8' fill='%23203129'/%3E%3C/svg%3E">
+<title>Kukuroo: self-hosted web push worker for iOS</title>
+<meta name="description" content="A self-hosted web push worker that works on iOS. One Cloudflare Worker, your own keys, no app to build and no notification vendor in the middle.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3.4' fill='%23203129'/%3E%3Cpath d='M2.3 14V6.4A2.6 2.6 0 0 1 4.9 3.8H11.1A2.6 2.6 0 0 1 13.7 6.4V14Z' fill='%23c9a254'/%3E%3Cpath d='M4.9 14V8.4A1.8 1.8 0 0 1 6.7 6.6H9.3A1.8 1.8 0 0 1 11.1 8.4V14Z' fill='%23203129'/%3E%3Cpath d='M7 14V10.6A1 1 0 0 1 9 10.6V14Z' fill='%23c9a254'/%3E%3C/svg%3E">
 <style>
   :root {
     --snow: #f4f6f3;
@@ -56,28 +56,26 @@
 
   /* ---------- hero: why this exists ---------- */
   .hero {
-    padding-block: 4rem 4.5rem;
-    display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr);
+    padding-block: 3.4rem 4rem;
+    display: grid; grid-template-columns: minmax(0, 1fr) 252px;
     gap: 3rem; align-items: center;
   }
-  .eyebrow {
-    font: 600 .78rem var(--mono); letter-spacing: .22em; text-transform: uppercase;
-    color: var(--feather); margin-bottom: 1.2rem;
-  }
   h1 {
-    /* Every bound here is set so "Self-hosted web push," survives on one line:
-       the monospace face runs ~12 characters' worth of width per 1px of font
-       size, and the only break that reads right is the authored one. */
-    font: 800 clamp(1.75rem, 4.1vw, 2.6rem)/1.14 var(--mono);
+    /* Sized so "Self-hosted web push worker," survives on one line: the mono
+       face runs ~0.6em per character, and the only break that reads right is
+       the authored one. */
+    font: 800 clamp(1.5rem, 3.3vw, 2.4rem)/1.15 var(--mono);
     letter-spacing: -.03em;
+    /* On a phone the first line has to wrap anyway; balance it rather than
+       leaving "worker," alone on a line of its own. */
+    text-wrap: balance;
   }
   h1 .quiet { color: var(--feather); }
-  .lede { margin-top: 1.3rem; font-size: 1.13rem; max-width: 34rem; }
-  .why { list-style: none; padding: 0; margin-top: 1rem; display: grid; gap: .7rem; max-width: 34rem; }
+  .lede { margin-top: 1.2rem; font-size: 1.1rem; max-width: 32rem; }
+  .why { list-style: none; padding: 0; margin-top: .9rem; display: grid; gap: .6rem; max-width: 32rem; }
   .why li { position: relative; padding-left: 1.15rem; color: var(--feather); }
   .why li::before { content: "\2014"; position: absolute; left: 0; color: var(--brass); }
-  .list-of-one { margin-top: 1.1rem; color: var(--feather); font-size: .97rem; max-width: 34rem; }
-  .cta-row { margin-top: 1.9rem; display: flex; gap: 1rem; flex-wrap: wrap; align-items: center; }
+  .cta-row { margin-top: 1.8rem; display: flex; gap: 1rem; flex-wrap: wrap; align-items: center; }
   .btn {
     display: inline-block; padding: .7rem 1.15rem; border-radius: .45rem;
     font: 600 .95rem var(--mono); text-decoration: none;
@@ -91,20 +89,47 @@
   .btn.ghost { border: 1.5px solid var(--rule); color: var(--ink); }
   .btn.ghost:hover { border-color: var(--brass); }
 
-  /* the striking clock: a day of alerts, arriving */
-  .moments { display: grid; gap: .8rem; }
+  /* ---------- the phone: a day of alerts, arriving ---------- */
+  /* Everything inside the bezel is fixed-colour on purpose. The screen is its
+     own little dark room and does not follow the page's light mode. */
+  .phone {
+    width: 252px; justify-self: center; padding: .5rem;
+    border-radius: 2.5rem;
+    background: linear-gradient(155deg, #46504a, #1a201d 38%, #2f3833);
+    /* The hairline is what keeps the bezel off the background in dark mode,
+       where the two are nearly the same value. */
+    box-shadow: 0 26px 55px rgba(20, 35, 27, .3), 0 0 0 1px rgba(255, 255, 255, .07);
+  }
+  .screen {
+    position: relative; aspect-ratio: 9 / 19.5; overflow: hidden;
+    border-radius: 2.1rem; padding: .75rem .5rem 1.4rem;
+    background: linear-gradient(168deg, #2b4034 0%, #16221c 52%, #22332a 100%);
+    display: flex; flex-direction: column;
+  }
+  .island {
+    width: 5rem; height: 1.05rem; border-radius: 1rem; background: #050907;
+    margin: 0 auto;
+  }
+  .lock { text-align: center; color: #fff; margin-top: 1.5rem; }
+  .lock .date { font: 500 .72rem var(--sans); opacity: .85; }
+  .lock .clock { font: 250 3.1rem/1.05 var(--sans); letter-spacing: -.02em; }
+
+  .moments { display: grid; gap: .4rem; margin-top: auto; }
   .notif {
-    background: var(--card); border-radius: .9rem; padding: .85rem 1rem;
-    box-shadow: 0 8px 26px rgba(20, 35, 27, .14), 0 1px 0 rgba(20,35,27,.05);
-    display: grid; grid-template-columns: auto 1fr auto; gap: .75rem; align-items: center;
+    border-radius: .85rem; padding: .5rem .55rem; color: #fff;
+    background: rgba(255, 255, 255, .16);
+    -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+    display: grid; grid-template-columns: auto 1fr auto; gap: .45rem; align-items: start;
   }
   .notif .appicon {
-    width: 2.1rem; height: 2.1rem; border-radius: .5rem; background: var(--pine);
+    width: 1.55rem; height: 1.55rem; border-radius: .42rem; background: #203129;
     display: grid; place-items: center;
   }
-  .notif b { font-size: .92rem; display: block; }
-  .notif .body { font-size: .87rem; color: var(--feather); }
-  .notif time { font-size: .75rem; color: var(--feather); align-self: start; }
+  .notif b { font: 600 .74rem/1.3 var(--sans); display: block; }
+  /* Block, so these lines are set by their own leading rather than the page's
+     17px/1.6 strut, which on a 2.3rem-wide card reads as double-spacing. */
+  .notif .body { display: block; font: .72rem/1.35 var(--sans); color: rgba(255, 255, 255, .84); }
+  .notif time { font: .62rem/1.55 var(--sans); color: rgba(255, 255, 255, .6); }
 
   @media (prefers-reduced-motion: no-preference) {
     html { scroll-behavior: smooth; }
@@ -150,28 +175,29 @@
   .term .out { color: #9fb8a6; }
   .caption { margin-top: 1rem; color: var(--feather); max-width: 42rem; }
 
-  /* ---------- the install fork ---------- */
-  .ask { font: 650 1.3rem/1.35 var(--sans); max-width: 32rem; margin-bottom: 1.5rem; }
-  .fork { display: grid; grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr)); gap: 1.2rem; }
-  .path {
-    display: block; text-decoration: none; color: inherit;
-    background: var(--card); border: 1.5px solid var(--rule); border-radius: .7rem;
-    padding: 1.2rem 1.3rem 1.1rem;
+  /* ---------- the install decision tree ---------- */
+  .defs { max-width: 44rem; margin-bottom: 1.6rem; }
+  .tree { max-width: 42rem; border-left: 2px solid var(--rule); }
+  .branch {
+    position: relative; padding: .95rem 0 .95rem 1.6rem;
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 1rem; align-items: baseline;
   }
-  .path:hover { border-color: var(--brass); }
-  .path .answer {
-    display: block; margin-bottom: .5rem;
-    font: 700 .78rem var(--mono); letter-spacing: .2em; text-transform: uppercase;
-    color: var(--brass);
+  .branch + .branch { border-top: 1px solid var(--rule); }
+  /* The tick that turns the trunk into a branch. */
+  .branch::before {
+    content: ""; position: absolute; left: 0; top: 1.55rem;
+    width: 1.1rem; height: 2px; background: var(--rule);
   }
-  .path b { font: 650 1.08rem var(--sans); display: block; margin-bottom: .4rem; }
-  .path p { color: var(--feather); font-size: .95rem; }
-  .path .go { display: block; margin-top: .9rem; font: 600 .88rem var(--mono); color: var(--brass); }
+  .branch .stmt { font-size: 1rem; }
+  .branch .leaf { font: 600 .9rem var(--mono); color: var(--brass); text-decoration: none; white-space: nowrap; }
+  .branch .leaf:hover { text-decoration: underline; }
 
-  .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: 2rem; counter-reset: step; }
+  /* Two up, not three: a 300px column truncates half of every command, and
+     these blocks are the argument the section is making. */
+  .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(21rem, 1fr)); gap: 2rem 2.5rem; counter-reset: step; }
   /* Grid items refuse to shrink below their content without this, and a long
      command line inside a step would push the whole page wider than a phone. */
-  .step, .punch, .path, .hero > div { min-width: 0; }
+  .step, .punch, .hero > div { min-width: 0; }
   .step { counter-increment: step; }
   .step::before {
     content: counter(step, decimal-leading-zero);
@@ -179,7 +205,9 @@
   }
   .step b { font: 650 1.03rem var(--sans); display: block; margin-bottom: .35rem; }
   .step p { font-size: .95rem; color: var(--feather); }
-  .step .term { margin-top: .8rem; font-size: .78rem; white-space: pre-wrap; word-break: break-word; }
+  /* Wrapping these would break paths and indentation mid-token, so the long
+     lines scroll inside the block instead. The block scrolls, not the page. */
+  .step .term { margin-top: .8rem; font-size: .78rem; padding: .9rem 1rem; }
   .more { margin-top: 1.8rem; font: 600 .9rem var(--mono); }
 
   .spec { list-style: none; padding: 0; display: grid; gap: .85rem; max-width: 44rem; }
@@ -194,7 +222,12 @@
   }
 
   @media (max-width: 54rem) {
-    .hero { grid-template-columns: 1fr; padding-block: 3rem; gap: 2.4rem; }
+    .hero { grid-template-columns: 1fr; padding-block: 2.6rem 3rem; gap: 2.6rem; }
+  }
+  /* Side by side, the statement gets three wrapped lines and the outcome gets
+     a lonely column. Stack them instead. */
+  @media (max-width: 34rem) {
+    .branch { grid-template-columns: 1fr; gap: .35rem; }
   }
 </style>
 </head>
@@ -208,46 +241,44 @@
 <main>
   <div class="hero wrap">
     <div>
-      <p class="eyebrow">Self-hosted web push · Cloudflare Workers · MIT</p>
-      <h1>Self-hosted web push,<br><span class="quiet">aimed at your iPhone.</span></h1>
-      <p class="lede">
-        A push endpoint you own, in one Cloudflare Worker: your keys, your
-        origin, your lock screen. It exists for two reasons.
-      </p>
+      <h1>Self-hosted web push worker,<br><span class="quiet">works on iOS.</span></h1>
+      <p class="lede">A push endpoint you own, in one Cloudflare Worker.</p>
       <ul class="why">
-        <li>Notifications that come with something to do next should not be
-        folded into a Telegram channel or a Discord server, fighting group chat
-        for the same badge. Email is where they go to die.</li>
-        <li>And the other way to get one line onto a lock screen is to build,
-        sign, and ship a native app whose entire job is that one line.</li>
+        <li>Notifications you have to act on should not be buried in a Telegram
+        channel, a Discord server, or email.</li>
+        <li>The other way onto a lock screen is shipping a native app whose only
+        job is that one line.</li>
       </ul>
-      <p class="list-of-one">
-        It runs on a Cloudflare Worker you deploy once. For one person's
-        notifications, the free plan is plenty.
-      </p>
       <div class="cta-row">
         <a class="btn solid" href="#install">Install Kukuroo</a>
         <a class="btn ghost" href="#prerequisites">Will it work for me?</a>
       </div>
     </div>
 
-    <div>
-      <div class="moments armed" id="moments" role="img"
-           aria-label="Lock-screen notifications: a task finished and unblocked the next one, a watched item dropped in price, a blog you follow published a post">
-        <div class="notif">
-          <div class="appicon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 16 16"><path d="M4.6 13.4V6.6a3.4 3.4 0 0 1 6.8 0v6.8z" fill="#c9a254"/><circle cx="9.8" cy="10" r=".8" fill="#203129"/></svg></div>
-          <div><b>Task W13 finished</b><span class="body">W14 is unblocked and ready to start</span></div>
-          <time>09:12</time>
+    <div class="phone" role="img"
+         aria-label="An iPhone lock screen: a task finished and unblocked the next one, a watched item dropped in price, a blog you follow published a post">
+      <div class="screen">
+        <div class="island" aria-hidden="true"></div>
+        <div class="lock" aria-hidden="true">
+          <div class="date">Thursday, 7 August</div>
+          <div class="clock">9:41</div>
         </div>
-        <div class="notif">
-          <div class="appicon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 16 16"><path d="M4.6 13.4V6.6a3.4 3.4 0 0 1 6.8 0v6.8z" fill="#c9a254"/><circle cx="9.8" cy="10" r=".8" fill="#203129"/></svg></div>
-          <div><b>Price drop</b><span class="body">Omnium Cargo, on your watchlist, is down 14%</span></div>
-          <time>13:27</time>
-        </div>
-        <div class="notif">
-          <div class="appicon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 16 16"><path d="M4.6 13.4V6.6a3.4 3.4 0 0 1 6.8 0v6.8z" fill="#c9a254"/><circle cx="9.8" cy="10" r=".8" fill="#203129"/></svg></div>
-          <div><b>New post</b><span class="body">"Moving to the US because I'm too rich"</span></div>
-          <time>20:05</time>
+        <div class="moments armed" id="moments" aria-hidden="true">
+          <div class="notif">
+            <div class="appicon"><svg width="17" height="17" viewBox="0 0 16 16"><path d="M2.3 14V6.4A2.6 2.6 0 0 1 4.9 3.8H11.1A2.6 2.6 0 0 1 13.7 6.4V14Z" fill="#c9a254"/><path d="M4.9 14V8.4A1.8 1.8 0 0 1 6.7 6.6H9.3A1.8 1.8 0 0 1 11.1 8.4V14Z" fill="#203129"/><path d="M7 14V10.6A1 1 0 0 1 9 10.6V14Z" fill="#c9a254"/></svg></div>
+            <div><b>Task W13 finished</b><span class="body">W14 is unblocked and ready to start</span></div>
+            <time>now</time>
+          </div>
+          <div class="notif">
+            <div class="appicon"><svg width="17" height="17" viewBox="0 0 16 16"><path d="M2.3 14V6.4A2.6 2.6 0 0 1 4.9 3.8H11.1A2.6 2.6 0 0 1 13.7 6.4V14Z" fill="#c9a254"/><path d="M4.9 14V8.4A1.8 1.8 0 0 1 6.7 6.6H9.3A1.8 1.8 0 0 1 11.1 8.4V14Z" fill="#203129"/><path d="M7 14V10.6A1 1 0 0 1 9 10.6V14Z" fill="#c9a254"/></svg></div>
+            <div><b>Watchlist</b><span class="body">Omnium Cargo is down 14%</span></div>
+            <time>9m ago</time>
+          </div>
+          <div class="notif">
+            <div class="appicon"><svg width="17" height="17" viewBox="0 0 16 16"><path d="M2.3 14V6.4A2.6 2.6 0 0 1 4.9 3.8H11.1A2.6 2.6 0 0 1 13.7 6.4V14Z" fill="#c9a254"/><path d="M4.9 14V8.4A1.8 1.8 0 0 1 6.7 6.6H9.3A1.8 1.8 0 0 1 11.1 8.4V14Z" fill="#203129"/><path d="M7 14V10.6A1 1 0 0 1 9 10.6V14Z" fill="#c9a254"/></svg></div>
+            <div><b>New post</b><span class="body">&ldquo;Moving to the US because I&rsquo;m too rich&rdquo;</span></div>
+            <time>1h ago</time>
+          </div>
         </div>
       </div>
     </div>
@@ -257,26 +288,24 @@
     <div class="wrap punches">
       <div class="punch">
         <b>No server to keep alive.</b>
-        <p>Kukuroo is a Cloudflare Worker plus KV. Deploy it once; there is no
-        host, no TLS to renew, no process to babysit at 3am. On the free plan,
-        personal use never gets near the meter.</p>
+        <p>A Worker and a KV namespace. Nothing to host, renew, or restart at 3am.</p>
       </div>
       <div class="punch">
         <b>No company in the middle.</b>
-        <p>Your keys live in your Worker, and the message is encrypted to your
-        device. Nobody's dashboard ever sees your alerts.</p>
+        <p>Your keys stay in your Worker, and the payload is encrypted to the
+        device. Nobody's dashboard sees your alerts.</p>
       </div>
       <div class="punch">
         <b>No app to build.</b>
-        <p>Your phone has rendered these natively since iOS 18.4. No App
-        Store, no $99 a year for four words on a lock screen.</p>
+        <p>iOS has rendered these natively since 18.4. No App Store, no $99 a
+        year for four words on a lock screen.</p>
       </div>
     </div>
   </section>
 
   <section>
     <div class="wrap">
-      <h2>The whole integration</h2>
+      <h2>Send a push notification in seconds</h2>
       <div class="term" aria-label="A curl command that sends a notification"><span class="cmt"># from cron, CI, a Raspberry Pi, your backend, a shell alias</span>
 curl -X POST https://push.example.com/push/send \
   -H <span class="str">"authorization: Bearer $KUKUROO_SEND_TOKEN"</span> \
@@ -284,34 +313,33 @@ curl -X POST https://push.example.com/push/send \
        "body":"W14 is unblocked and ready to start",
        "navigate":"https://push.example.com/"}}'</span>
 <span class="out">{"delivered":1,"removed":0,"failures":[]}</span></div>
-      <p class="caption">
-        That is not the quick start. That is the entire integration: anything
-        that can make an HTTP call can ring your phone.
-      </p>
+      <p class="caption">Anything that can make an HTTP call can ring your phone.</p>
     </div>
   </section>
 
   <section id="install">
     <div class="wrap">
       <h2>Install</h2>
-      <p class="ask">Do you already serve a site from a Cloudflare Worker?</p>
-      <div class="fork">
-        <a class="path" href="#standalone">
-          <span class="answer">No</span>
-          <b>Deploy Kukuroo on its own</b>
-          <p>It becomes its own Worker at its own address, serves the enrolment
-          page it ships with, and does nothing else. Five commands, no code to
-          write.</p>
-          <span class="go">Standalone setup &rarr;</span>
-        </a>
-        <a class="path" href="#mount">
-          <span class="answer">Yes</span>
-          <b>Mount it into that Worker</b>
-          <p>Three lines in the Worker you already have. The push routes join
-          your site's origin, so a notification tap lands back inside your own
-          site.</p>
-          <span class="go">Mounted setup &rarr;</span>
-        </a>
+      <p class="defs">
+        <b>Standalone</b> is its own Worker at its own address, serving the
+        enrolment page it ships with. <b>Mounted</b> is three lines inside a
+        Worker you already run. Find your line:
+      </p>
+      <div class="tree">
+        <div class="branch">
+          <p class="stmt">I don't run a Cloudflare Worker yet.</p>
+          <a class="leaf" href="#standalone">Standalone &rarr;</a>
+        </div>
+        <div class="branch">
+          <p class="stmt">I run one, and notification taps should land inside my
+          own site.</p>
+          <a class="leaf" href="#mount">Mounted &rarr;</a>
+        </div>
+        <div class="branch">
+          <p class="stmt">I run one, but push can live on its own address, away
+          from my site.</p>
+          <a class="leaf" href="#standalone">Standalone &rarr;</a>
+        </div>
       </div>
     </div>
   </section>
@@ -322,8 +350,8 @@ curl -X POST https://push.example.com/push/send \
       <div class="steps">
         <div class="step">
           <b>Deploy your Worker</b>
-          <p>Copy the template, pick the hostname it will answer on, generate
-          your keys with one command, deploy. Storage provisions itself.</p>
+          <p>Copy the template, generate your keys, deploy. Storage provisions
+          itself.</p>
           <div class="term">npm install kukuroo
 cp -r node_modules/kukuroo/templates/standalone my-kukuroo
 cd my-kukuroo &amp;&amp; npm install
@@ -332,14 +360,13 @@ npx wrangler deploy</div>
         </div>
         <div class="step">
           <b>Put it on your Home Screen</b>
-          <p>Open your new page in Safari, Add to Home Screen, open it from the
-          icon, type the invite code. Thirty seconds, once per device. That is
-          Apple's one rule, and the only manual step in the whole thing.</p>
+          <p>Open the page in Safari, Add to Home Screen, open it from the icon,
+          type the invite code. Apple's rule, once per device.</p>
         </div>
         <div class="step">
           <b>POST when something happens</b>
-          <p>Drop the curl above into whatever should be able to reach you.
-          The response tells you exactly how many devices it reached.</p>
+          <p>The curl above, from anything that can reach the internet. The
+          response counts the devices it reached.</p>
         </div>
       </div>
       <p class="more"><a href="https://github.com/saiday/kukuroo#standalone">The full standalone setup, step by step &rarr;</a></p>
@@ -352,8 +379,8 @@ npx wrangler deploy</div>
       <div class="steps">
         <div class="step">
           <b>Hand it your requests first</b>
-          <p><code>handle</code> returns null for anything outside its prefix,
-          so your own routing is untouched.</p>
+          <p><code>handle</code> returns null outside its prefix, so your own
+          routing is untouched.</p>
           <div class="term">import { mountKukuroo } from <span class="str">"kukuroo"</span>;
 
 const kukuroo = mountKukuroo({ prefix: <span class="str">"/push"</span> });
@@ -361,14 +388,14 @@ const kukuroo = mountKukuroo({ prefix: <span class="str">"/push"</span> });
 export default {
   async fetch(request, env) {
     const hit = await kukuroo.handle(request, env);
-    return hit ?? yourExistingRouter(request, env);
+    return hit ?? yourRouter(request, env);
   },
 };</div>
         </div>
         <div class="step">
           <b>Bind KV, then generate the keys</b>
-          <p>The binding name is fixed; the namespace itself provisions on your
-          next deploy. Same one-command setup as standalone.</p>
+          <p>The binding name is fixed; the namespace provisions on your next
+          deploy.</p>
           <div class="term"><span class="cmt">// wrangler.jsonc</span>
 "kv_namespaces": [{ "binding": "KUKUROO_SUBS" }]
 
@@ -377,9 +404,9 @@ npm install kukuroo &amp;&amp; npx kukuroo init</div>
         </div>
         <div class="step">
           <b>Serve enrolment on your origin</b>
-          <p>Return the bundled page from any route of yours, or build your own
-          against <code>/push/subscribe</code>. Devices then enrol on your
-          site's hostname, which is where a notification tap should land.</p>
+          <p>Return the bundled page from a route of yours, or build your own
+          against <code>/push/subscribe</code>. Devices enrol on your hostname,
+          which is where a tap should land.</p>
           <div class="term">import { enrolmentPage } from <span class="str">"kukuroo"</span>;
 
 return new Response(enrolmentPage({
@@ -395,24 +422,20 @@ return new Response(enrolmentPage({
   <section id="prerequisites">
     <div class="wrap">
       <h2>Prerequisites</h2>
-      <p class="opinionated">
-        Kukuroo is opinionated, and the list of things it supports is short on
-        purpose. All of it, before you install anything:
-      </p>
+      <p class="opinionated">Kukuroo supports a short list, on purpose:</p>
       <ul class="spec">
         <li><b>Cloudflare Workers.</b> The only place it runs. No Docker image,
-        no binary, no other host, and nothing to keep alive.</li>
-        <li><b>Safari.</b> Declarative Web Push has not shipped anywhere else
-        yet: no Chrome, no Firefox, no Android. Unsupported browsers are turned
-        away at the enrolment page rather than left half working.</li>
-        <li><b>iOS 18.4 or later</b>, with the page added to your Home Screen
-        and opened from the icon. A Safari tab will not do, and that is Apple's
-        rule rather than ours. macOS Safari 18.5 receives too, if you can think
-        of a reason to want notifications on the machine you are already staring
-        at.</li>
-        <li><b>About 50 devices per send</b> on Cloudflare's free plan, which is
-        the subrequest ceiling and roughly 47 more phones than one person owns.
-        The README does the arithmetic.</li>
+        no binary, no other host.</li>
+        <li><b>Safari.</b> Declarative Web Push has shipped nowhere else yet.
+        Other browsers are turned away at the enrolment page rather than left
+        half working.</li>
+        <li><b>iOS 18.4 or later</b>, with the page on your Home Screen and
+        opened from the icon. A Safari tab will not do, and that is Apple's rule
+        rather than ours. macOS Safari 18.5 receives too, if you can think of a
+        reason to want it.</li>
+        <li><b>About 50 devices per send</b> if you are on a free-plan Worker.
+        That is the subrequest ceiling, and about 47 more phones than one person
+        owns.</li>
       </ul>
     </div>
   </section>
