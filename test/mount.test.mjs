@@ -185,4 +185,47 @@ try {
 } catch { threw = true; }
 ok("a missing KV binding still throws (the host's opaque 500; see mount.ts)", threw);
 
+// ---- the gate opened on purpose ---------------------------------------------
+// `requireInvite: false` is the answer to "is this deployment personal?". It has
+// its own KV so the fan-out counts above stay about the subscription they were
+// written for.
+const openKv = fakeKV();
+const openEnv = { ...env, KUKUROO_SUBS: openKv };
+const openKukuroo = mountKukuroo({ prefix: "/push", standalone: true, requireInvite: false });
+
+const noInvite = await openKukuroo.handle(req("/push/subscribe", {
+  method: "POST",
+  body: JSON.stringify({ subscription: subscriptionBody(), label: "iPhone" }),
+}), openEnv);
+ok("with the gate open, a body carrying no invite is 200",
+  noInvite.status === 200 && openKv.store.size === 1);
+
+const staleInvite = await openKukuroo.handle(req("/push/subscribe", {
+  method: "POST",
+  body: JSON.stringify({ invite: "whatever", subscription: subscriptionBody() }),
+}), openEnv);
+ok("a stale invite is ignored rather than checked", staleInvite.status === 200);
+
+const openEnvNoSecret = { ...openEnv };
+delete openEnvNoSecret.KUKUROO_INVITE_CODE;
+ok("with the gate open, the missing secret is not consulted and not a 503",
+  (await openKukuroo.handle(req("/push/subscribe", {
+    method: "POST",
+    body: JSON.stringify({ subscription: subscriptionBody() }),
+  }), openEnvNoSecret)).status === 200);
+
+const openPage = await (await openKukuroo.handle(req("/push/enroll"), openEnv)).text();
+ok("the open enrolment page has no code field to type into", !openPage.includes('id="invite"'));
+const gatedPage = await (await kukuroo.handle(req("/push/enroll"), env)).text();
+ok("the gated enrolment page still asks for one", gatedPage.includes('id="invite"'));
+
+// The default is the safe one: an option that is absent, misspelled, or lost in
+// a config that never reached the Worker leaves the gate standing.
+const defaulted = mountKukuroo({ prefix: "/push", standalone: true });
+ok("requireInvite defaults to on",
+  (await defaulted.handle(req("/push/subscribe", {
+    method: "POST",
+    body: JSON.stringify({ subscription: subscriptionBody() }),
+  }), openEnv)).status === 403);
+
 console.error = realConsoleError;

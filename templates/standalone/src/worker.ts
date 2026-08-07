@@ -2,20 +2,27 @@
  * A standalone Kukuroo deployment: a notification sink and nothing else.
  *
  *   GET  /push/enroll      the enrolment page you add to your Home Screen
- *   GET  /push/public-key  the VAPID public key, for that page
+ *   GET  /push/public-key  the VAPID public key, for the enrolment page
  *   POST /push/subscribe   invite-gated
  *   POST /push/send        bearer-gated, encrypts and fans out
  *
  * If you already have a Worker, you do not need this file. Import
- * `mountKukuroo` there instead, drop `standalone`, and serve your own enrolment
- * UI on the origin you already own.
+ * `mountKukuroo` there instead and put the routes on the origin you already own.
  */
 
 import { mountKukuroo, type KukurooEnv } from "kukuroo";
 
 // `standalone: true` is what serves the bundled enrolment page. Without it
 // /push/enroll is not routed at all, on the assumption that the host has its own.
-const kukuroo = mountKukuroo({ prefix: "/push", standalone: true });
+//
+// `requireInvite: true` keeps the code on /push/subscribe: a stranger who finds
+// this URL cannot enrol their own device and start reading your notifications.
+// Turn it off only if enrolment is meant to be open to whoever turns up.
+const kukuroo = mountKukuroo({
+  prefix: "/push",
+  standalone: true,
+  requireInvite: true,
+});
 
 export default {
   async fetch(request: Request, env: KukurooEnv): Promise<Response> {

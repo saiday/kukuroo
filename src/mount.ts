@@ -6,6 +6,8 @@
  *   GET  <prefix>/public-key  open            the VAPID public key
  *   GET  <prefix>/enroll      open            the bundled enrolment page
  *
+ * `requireInvite: false` opens the first of those. See the option.
+ *
  * `handle` returns `null` for anything it does not own, so a host Worker can
  * fall through to its own routing without Kukuroo having to know about it.
  *
@@ -27,6 +29,21 @@ export interface MountOptions {
    * supply their own UI on their own origin and should leave this off.
    */
   standalone?: boolean;
+  /**
+   * Whether `<prefix>/subscribe` demands the invite code. Default true.
+   *
+   * `false` is a deliberate answer to one question: is this deployment personal?
+   * A push endpoint for one person's own phones is worth gating, because the
+   * gate is what stops a stranger who finds the URL from enrolling their own
+   * device and reading the titles of everything you send. A channel meant for
+   * whoever turns up is not, and there the code is friction that buys nothing.
+   *
+   * Off, the enrolment page drops its code field and the endpoint accepts any
+   * well-formed subscription. Nothing else changes: KUKUROO_INVITE_CODE stays
+   * generated and stored, so turning the gate back on is this one word plus a
+   * deploy, with no device re-enrolling.
+   */
+  requireInvite?: boolean;
 }
 
 export interface KukurooRoutes {
@@ -187,6 +204,11 @@ function preflight(
 export function mountKukuroo(options: MountOptions = {}): KukurooRoutes {
   const prefix = (options.prefix ?? "/push").replace(/\/+$/, "");
   const originsCache: OriginsCache = { origins: [] };
+  // Default on, and only an explicit `false` turns it off. An absent option, a
+  // typo'd one, or a var that failed to reach the Worker all leave the gate
+  // standing, because the failure mode of the other default is an open
+  // endpoint that reports nothing.
+  const requireInvite = options.requireInvite !== false;
 
   return {
     prefix,
@@ -202,6 +224,7 @@ export function mountKukuroo(options: MountOptions = {}): KukurooRoutes {
         const page = enrolmentPage({
           subscribePath: prefix + "/subscribe",
           publicKeyPath: prefix + "/public-key",
+          requireInvite,
         });
         return new Response(page, {
           headers: { "content-type": "text/html; charset=utf-8" },
@@ -234,7 +257,7 @@ export function mountKukuroo(options: MountOptions = {}): KukurooRoutes {
         // needs to display.
         const cors = corsFor(request, env, originsCache);
         if (request.method !== "POST") return json({ error: "method not allowed" }, 405, cors);
-        return handleSubscribe(request, env, cors);
+        return handleSubscribe(request, env, cors, requireInvite);
       }
 
       if (route === "/send") {
@@ -251,6 +274,7 @@ async function handleSubscribe(
   request: Request,
   env: KukurooEnv,
   cors: Record<string, string>,
+  requireInvite: boolean,
 ): Promise<Response> {
   let body: Record<string, unknown>;
   try {
@@ -259,12 +283,17 @@ async function handleSubscribe(
     return json({ error: "body must be JSON" }, 400, cors);
   }
 
-  const expected = requireSecret(env.KUKUROO_INVITE_CODE, "KUKUROO_INVITE_CODE", cors);
-  if (expected instanceof Response) return expected;
+  // With the gate open, the secret is not consulted at all: an `invite` in the
+  // body is ignored rather than checked, so a deployment that turns the gate
+  // off does not then fail on a stale code some page is still sending.
+  if (requireInvite) {
+    const expected = requireSecret(env.KUKUROO_INVITE_CODE, "KUKUROO_INVITE_CODE", cors);
+    if (expected instanceof Response) return expected;
 
-  const invite = typeof body.invite === "string" ? body.invite : "";
-  if (!secretEquals(invite, expected)) {
-    return json({ error: "invalid invite code" }, 403, cors);
+    const invite = typeof body.invite === "string" ? body.invite : "";
+    if (!secretEquals(invite, expected)) {
+      return json({ error: "invalid invite code" }, 403, cors);
+    }
   }
 
   let subscription;

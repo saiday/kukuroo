@@ -323,7 +323,9 @@ curl -X POST https://push.example.com/push/send \
       <p class="defs">
         <b>Standalone</b> is its own Worker at its own address, serving the
         enrolment page it ships with. <b>Mounted</b> is three lines inside a
-        Worker you already run. Find your line:
+        Worker you already run. You do not have to decide first: setup asks
+        whether you want the front end it ships with, and that answer decides
+        most of it. Find your line anyway:
       </p>
       <div class="tree">
         <div class="branch">
@@ -349,19 +351,20 @@ curl -X POST https://push.example.com/push/send \
       <h2>Standalone</h2>
       <div class="steps">
         <div class="step">
-          <b>Deploy your Worker</b>
-          <p>Copy the template, generate your keys, deploy. Storage provisions
-          itself.</p>
-          <div class="term">npm install kukuroo
-cp -r node_modules/kukuroo/templates/standalone my-kukuroo
-cd my-kukuroo &amp;&amp; npm install
-npx kukuroo init
-npx wrangler deploy</div>
+          <b>Answer two questions</b>
+          <p>One command writes the Worker, generates every key, and installs
+          them. Storage provisions itself. Pass the answers as flags instead and
+          it asks nothing.</p>
+          <div class="term">npx kukuroo init my-push
+<span class="out">  Use the bundled front end?                [Y/n]
+  Require an invite code to enrol a device? [y/N]</span>
+cd my-push &amp;&amp; npx wrangler deploy</div>
         </div>
         <div class="step">
           <b>Put it on your Home Screen</b>
-          <p>Open the page in Safari, Add to Home Screen, open it from the icon,
-          type the invite code. Apple's rule, once per device.</p>
+          <p>Open the page in Safari, Add to Home Screen, open it from the icon.
+          Apple's rule, once per device. The invite code, if you asked for one,
+          is typed here.</p>
         </div>
         <div class="step">
           <b>POST when something happens</b>
@@ -369,6 +372,10 @@ npx wrangler deploy</div>
           response counts the devices it reached.</p>
         </div>
       </div>
+      <p class="caption">The first question is the personal one. With the code
+      on, only devices you invite can enrol; with it off, anyone who reaches the
+      page can, and will get everything you send. Both answers are one word in
+      <code>src/worker.ts</code> afterwards, and no device re-enrols.</p>
       <p class="more"><a href="https://github.com/saiday/kukuroo#standalone">The full standalone setup, step by step &rarr;</a></p>
     </div>
   </section>
@@ -383,7 +390,10 @@ npx wrangler deploy</div>
           routing is untouched.</p>
           <div class="term">import { mountKukuroo } from <span class="str">"kukuroo"</span>;
 
-const kukuroo = mountKukuroo({ prefix: <span class="str">"/push"</span> });
+const kukuroo = mountKukuroo({
+  prefix: <span class="str">"/push"</span>,
+  requireInvite: true,
+});
 
 export default {
   async fetch(request, env) {
@@ -399,8 +409,8 @@ export default {
           <div class="term"><span class="cmt">// wrangler.jsonc</span>
 "kv_namespaces": [{ "binding": "KUKUROO_SUBS" }]
 
-<span class="cmt"># then</span>
-npm install kukuroo &amp;&amp; npx kukuroo init</div>
+<span class="cmt"># then, from that directory</span>
+npm install kukuroo &amp;&amp; npx kukuroo init --mounted</div>
         </div>
         <div class="step">
           <b>Serve enrolment on your origin</b>
@@ -412,6 +422,7 @@ npm install kukuroo &amp;&amp; npx kukuroo init</div>
 return new Response(enrolmentPage({
   subscribePath: <span class="str">"/push/subscribe"</span>,
   publicKeyPath: <span class="str">"/push/public-key"</span>,
+  requireInvite: true,
 }), { headers: { <span class="str">"content-type"</span>: <span class="str">"text/html"</span> } });</div>
         </div>
       </div>

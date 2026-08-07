@@ -20,6 +20,13 @@ export interface EnrolmentPageOptions {
   /** Where the page fetches the VAPID public key; path or absolute URL, as above. */
   publicKeyPath: string;
   title?: string;
+  /**
+   * Whether to ask for the invite code. Default true, matching the Worker's
+   * default gate. Set it to whatever `mountKukuroo` was given: a page that asks
+   * for a code the endpoint ignores is confusing, and a page that does not ask
+   * for one the endpoint demands is broken.
+   */
+  requireInvite?: boolean;
 }
 
 /** Kept out of the HTML so an operator-supplied title cannot close a tag. */
@@ -32,6 +39,12 @@ function escapeHtml(value: string): string {
 
 export function enrolmentPage(options: EnrolmentPageOptions): string {
   const title = escapeHtml(options.title ?? "Enrol this device");
+  const inviteField =
+    options.requireInvite === false
+      ? ""
+      : `<input id="invite" type="text" placeholder="Invite code" autocomplete="off"
+         autocapitalize="off" autocorrect="off" spellcheck="false" required>
+  `;
   return `<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -59,9 +72,7 @@ export function enrolmentPage(options: EnrolmentPageOptions): string {
 <h1>${title}</h1>
 <div id="gate" class="warn" hidden></div>
 <form id="form">
-  <input id="invite" type="text" placeholder="Invite code" autocomplete="off"
-         autocapitalize="off" autocorrect="off" spellcheck="false" required>
-  <button type="submit"><span>Enable notifications</span></button>
+  ${inviteField}<button type="submit"><span>Enable notifications</span></button>
 </form>
 <div id="status"></div>
 
@@ -73,6 +84,7 @@ const PUBLIC_KEY_PATH = ${JSON.stringify(options.publicKeyPath).replace(/</g, "\
 const gate = document.getElementById("gate");
 const form = document.getElementById("form");
 const status = document.getElementById("status");
+const invite = document.getElementById("invite");
 
 const installed = window.navigator.standalone === true ||
   window.matchMedia("(display-mode: standalone)").matches;
@@ -121,8 +133,10 @@ form.addEventListener("submit", async (event) => {
     const response = await fetch(SUBSCRIBE_PATH, {
       method: "POST",
       headers: { "content-type": "application/json" },
+      // The field is absent when the deployment does not gate enrolment, so the
+      // key is absent too rather than sent empty. One code path, either way.
       body: JSON.stringify({
-        invite: document.getElementById("invite").value.trim(),
+        ...(invite === null ? {} : { invite: invite.value.trim() }),
         subscription: subscription.toJSON(),
         label: navigator.platform || "device",
       }),
