@@ -3,9 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Kukuroo: web push with no server to run</title>
-<meta name="description" content="Turn one HTTP call into a lock-screen notification. A free Cloudflare Worker, your own keys, no app, no vendor in the middle.">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='7' fill='%23203129'/%3E%3Ccircle cx='8' cy='8' r='1.6' fill='%23c9a254'/%3E%3Crect x='7.4' y='2.5' width='1.2' height='5.5' rx='.6' fill='%23c9a254'/%3E%3C/svg%3E">
+<title>Kukuroo: self-hosted web push for iOS</title>
+<meta name="description" content="A self-hosted web push module aimed at iOS. One free Cloudflare Worker, your own keys, no app to build and no notification vendor in the middle.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3.4' fill='%23203129'/%3E%3Cpath d='M4.6 13.4V6.6a3.4 3.4 0 0 1 6.8 0v6.8z' fill='%23c9a254'/%3E%3Ccircle cx='9.8' cy='10' r='.8' fill='%23203129'/%3E%3C/svg%3E">
 <style>
   :root {
     --snow: #f4f6f3;
@@ -54,7 +54,7 @@
   }
   header a.gh { font-size: .95rem; color: var(--ink); }
 
-  /* ---------- hero: the moment ---------- */
+  /* ---------- hero: why this exists ---------- */
   .hero {
     padding-block: 4rem 4.5rem;
     display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr);
@@ -65,12 +65,18 @@
     color: var(--feather); margin-bottom: 1.2rem;
   }
   h1 {
-    font: 800 clamp(2.2rem, 5.6vw, 3.4rem)/1.12 var(--mono);
+    /* Every bound here is set so "Self-hosted web push," survives on one line:
+       the monospace face runs ~12 characters' worth of width per 1px of font
+       size, and the only break that reads right is the authored one. */
+    font: 800 clamp(1.75rem, 4.1vw, 2.6rem)/1.14 var(--mono);
     letter-spacing: -.03em;
   }
   h1 .quiet { color: var(--feather); }
   .lede { margin-top: 1.3rem; font-size: 1.13rem; max-width: 34rem; }
-  .list-of-one { margin-top: .9rem; color: var(--feather); }
+  .why { list-style: none; padding: 0; margin-top: 1rem; display: grid; gap: .7rem; max-width: 34rem; }
+  .why li { position: relative; padding-left: 1.15rem; color: var(--feather); }
+  .why li::before { content: "\2014"; position: absolute; left: 0; color: var(--brass); }
+  .list-of-one { margin-top: 1.1rem; color: var(--feather); font-size: .97rem; max-width: 34rem; }
   .cta-row { margin-top: 1.9rem; display: flex; gap: 1rem; flex-wrap: wrap; align-items: center; }
   .btn {
     display: inline-block; padding: .7rem 1.15rem; border-radius: .45rem;
@@ -99,13 +105,9 @@
   .notif b { font-size: .92rem; display: block; }
   .notif .body { font-size: .87rem; color: var(--feather); }
   .notif time { font-size: .75rem; color: var(--feather); align-self: start; }
-  .replay {
-    margin-top: .2rem; background: none; border: none; padding: 0;
-    font: 600 .82rem var(--mono); color: var(--brass); cursor: pointer;
-    text-decoration: underline; text-underline-offset: 3px; justify-self: start;
-  }
 
   @media (prefers-reduced-motion: no-preference) {
+    html { scroll-behavior: smooth; }
     .moments.armed .notif { opacity: 0; }
     .moments.strike .notif {
       animation: cuckoo .7s cubic-bezier(.2, 1.5, .35, 1) forwards;
@@ -113,7 +115,6 @@
     .moments.strike .notif:nth-child(1) { animation-delay: .1s; }
     .moments.strike .notif:nth-child(2) { animation-delay: .55s; }
     .moments.strike .notif:nth-child(3) { animation-delay: 1.0s; }
-    .moments.strike .notif:nth-child(4) { animation-delay: 1.45s; }
     @keyframes cuckoo {
       0%   { opacity: 0; transform: translateY(-1.1rem) scale(.9); }
       70%  { opacity: 1; transform: translateY(.2rem) scale(1.01); }
@@ -128,6 +129,8 @@
 
   /* ---------- sections ---------- */
   section { padding-block: 3.2rem; border-top: 1px solid var(--rule); }
+  /* Anchored sections land under the top edge, not flush against it. */
+  section[id] { scroll-margin-top: 1.5rem; }
   h2 {
     font: 700 1rem var(--mono); letter-spacing: .14em; text-transform: uppercase;
     color: var(--feather); margin-bottom: 1.5rem;
@@ -147,10 +150,28 @@
   .term .out { color: #9fb8a6; }
   .caption { margin-top: 1rem; color: var(--feather); max-width: 42rem; }
 
+  /* ---------- the install fork ---------- */
+  .ask { font: 650 1.3rem/1.35 var(--sans); max-width: 32rem; margin-bottom: 1.5rem; }
+  .fork { display: grid; grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr)); gap: 1.2rem; }
+  .path {
+    display: block; text-decoration: none; color: inherit;
+    background: var(--card); border: 1.5px solid var(--rule); border-radius: .7rem;
+    padding: 1.2rem 1.3rem 1.1rem;
+  }
+  .path:hover { border-color: var(--brass); }
+  .path .answer {
+    display: block; margin-bottom: .5rem;
+    font: 700 .78rem var(--mono); letter-spacing: .2em; text-transform: uppercase;
+    color: var(--brass);
+  }
+  .path b { font: 650 1.08rem var(--sans); display: block; margin-bottom: .4rem; }
+  .path p { color: var(--feather); font-size: .95rem; }
+  .path .go { display: block; margin-top: .9rem; font: 600 .88rem var(--mono); color: var(--brass); }
+
   .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); gap: 2rem; counter-reset: step; }
   /* Grid items refuse to shrink below their content without this, and a long
      command line inside a step would push the whole page wider than a phone. */
-  .step, .punch, .hero > div { min-width: 0; }
+  .step, .punch, .path, .hero > div { min-width: 0; }
   .step { counter-increment: step; }
   .step::before {
     content: counter(step, decimal-leading-zero);
@@ -159,15 +180,18 @@
   .step b { font: 650 1.03rem var(--sans); display: block; margin-bottom: .35rem; }
   .step p { font-size: .95rem; color: var(--feather); }
   .step .term { margin-top: .8rem; font-size: .78rem; white-space: pre-wrap; word-break: break-word; }
+  .more { margin-top: 1.8rem; font: 600 .9rem var(--mono); }
 
-  .fineprint { color: var(--feather); max-width: 44rem; }
-  .fineprint b { color: var(--ink); font-weight: 650; }
+  .spec { list-style: none; padding: 0; display: grid; gap: .85rem; max-width: 44rem; }
+  .spec li { position: relative; padding-left: 1.15rem; color: var(--feather); font-size: .98rem; }
+  .spec li::before { content: "\2014"; position: absolute; left: 0; color: var(--brass); }
+  .spec b { color: var(--ink); font-weight: 650; }
+  .opinionated { max-width: 44rem; margin-bottom: 1.2rem; }
 
   footer {
     border-top: 1px solid var(--rule); padding-block: 2.2rem 3.2rem;
     color: var(--feather); font-size: .95rem;
   }
-  footer .wrap { display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
 
   @media (max-width: 54rem) {
     .hero { grid-template-columns: 1fr; padding-block: 3rem; gap: 2.4rem; }
@@ -184,45 +208,47 @@
 <main>
   <div class="hero wrap">
     <div>
-      <p class="eyebrow">Web push · Cloudflare Workers · MIT</p>
-      <h1>The moment it happens,<br><span class="quiet">your phone knows.</span></h1>
+      <p class="eyebrow">Self-hosted web push · Cloudflare Workers · MIT</p>
+      <h1>Self-hosted web push,<br><span class="quiet">aimed at your iPhone.</span></h1>
       <p class="lede">
-        A build finishes. A price drops. A disk fills. Kukuroo turns one HTTP
-        call into a lock-screen notification, from a free Cloudflare Worker
-        you deploy once and forget: no server, no vendor in the middle, no app
-        to build.
+        A push endpoint you own, in one Cloudflare Worker: your keys, your
+        origin, your lock screen. It exists for two reasons.
       </p>
-      <p class="list-of-one">You need a Cloudflare account. That's the list.</p>
+      <ul class="why">
+        <li>Notifications that come with something to do next should not be
+        folded into a Telegram channel or a Discord server, fighting group chat
+        for the same badge. Email is where they go to die.</li>
+        <li>And the other way to get one line onto a lock screen is to build,
+        sign, and ship a native app whose entire job is that one line.</li>
+      </ul>
+      <p class="list-of-one">
+        It runs on a Cloudflare Worker you deploy once. For one person's
+        notifications, the free plan is plenty.
+      </p>
       <div class="cta-row">
-        <a class="btn solid" href="https://github.com/saiday/kukuroo#setup">Install Kukuroo</a>
-        <a class="btn ghost" href="https://github.com/saiday/kukuroo#two-things-are-permanent">Read the two rules first</a>
+        <a class="btn solid" href="#install">Install Kukuroo</a>
+        <a class="btn ghost" href="#prerequisites">Will it work for me?</a>
       </div>
     </div>
 
     <div>
       <div class="moments armed" id="moments" role="img"
-           aria-label="Lock-screen notifications: a backup finished, a price dropped, a deploy failed, a disk is filling up">
+           aria-label="Lock-screen notifications: a task finished and unblocked the next one, a watched item dropped in price, a blog you follow published a post">
         <div class="notif">
-          <div class="appicon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="none" stroke="#c9a254" stroke-width="1.4"/><circle cx="8" cy="8" r="1.3" fill="#c9a254"/><rect x="7.45" y="3" width="1.1" height="5" rx=".55" fill="#c9a254"/></svg></div>
-          <div><b>Backup finished</b><span class="body">nightly to B2, 2.3 GB in 41s</span></div>
-          <time>02:00</time>
+          <div class="appicon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 16 16"><path d="M4.6 13.4V6.6a3.4 3.4 0 0 1 6.8 0v6.8z" fill="#c9a254"/><circle cx="9.8" cy="10" r=".8" fill="#203129"/></svg></div>
+          <div><b>Task W13 finished</b><span class="body">W14 is unblocked and ready to start</span></div>
+          <time>09:12</time>
         </div>
         <div class="notif">
-          <div class="appicon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="none" stroke="#c9a254" stroke-width="1.4"/><circle cx="8" cy="8" r="1.3" fill="#c9a254"/><rect x="7.45" y="3" width="1.1" height="5" rx=".55" fill="#c9a254"/></svg></div>
-          <div><b>Price drop</b><span class="body">X100V hit ¥89,000 on Mercari</span></div>
-          <time>07:14</time>
+          <div class="appicon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 16 16"><path d="M4.6 13.4V6.6a3.4 3.4 0 0 1 6.8 0v6.8z" fill="#c9a254"/><circle cx="9.8" cy="10" r=".8" fill="#203129"/></svg></div>
+          <div><b>Price drop</b><span class="body">Omnium Cargo, on your watchlist, is down 14%</span></div>
+          <time>13:27</time>
         </div>
         <div class="notif">
-          <div class="appicon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="none" stroke="#c9a254" stroke-width="1.4"/><circle cx="8" cy="8" r="1.3" fill="#c9a254"/><rect x="7.45" y="3" width="1.1" height="5" rx=".55" fill="#c9a254"/></svg></div>
-          <div><b>Deploy failed</b><span class="body">main: tests red at step 4 of 7</span></div>
-          <time>11:52</time>
+          <div class="appicon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 16 16"><path d="M4.6 13.4V6.6a3.4 3.4 0 0 1 6.8 0v6.8z" fill="#c9a254"/><circle cx="9.8" cy="10" r=".8" fill="#203129"/></svg></div>
+          <div><b>New post</b><span class="body">"Moving to the US because I'm too rich"</span></div>
+          <time>20:05</time>
         </div>
-        <div class="notif">
-          <div class="appicon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="none" stroke="#c9a254" stroke-width="1.4"/><circle cx="8" cy="8" r="1.3" fill="#c9a254"/><rect x="7.45" y="3" width="1.1" height="5" rx=".55" fill="#c9a254"/></svg></div>
-          <div><b>Disk almost full</b><span class="body">vps-tokyo, /var at 91%</span></div>
-          <time>16:40</time>
-        </div>
-        <button class="replay" id="replay" type="button" hidden>Ring them again</button>
       </div>
     </div>
   </div>
@@ -231,8 +257,9 @@
     <div class="wrap punches">
       <div class="punch">
         <b>No server to keep alive.</b>
-        <p>Kukuroo is a free Cloudflare Worker plus KV. Deploy it once; there
-        is no host, no TLS to renew, no process to babysit at 3am.</p>
+        <p>Kukuroo is a Cloudflare Worker plus KV. Deploy it once; there is no
+        host, no TLS to renew, no process to babysit at 3am. On the free plan,
+        personal use never gets near the meter.</p>
       </div>
       <div class="punch">
         <b>No company in the middle.</b>
@@ -253,8 +280,8 @@
       <div class="term" aria-label="A curl command that sends a notification"><span class="cmt"># from cron, CI, a Raspberry Pi, your backend, a shell alias</span>
 curl -X POST https://push.example.com/push/send \
   -H <span class="str">"authorization: Bearer $KUKUROO_SEND_TOKEN"</span> \
-  -d <span class="str">'{"notification":{"title":"Backup finished",
-       "body":"nightly to B2, 2.3 GB in 41s",
+  -d <span class="str">'{"notification":{"title":"Task W13 finished",
+       "body":"W14 is unblocked and ready to start",
        "navigate":"https://push.example.com/"}}'</span>
 <span class="out">{"delivered":1,"removed":0,"failures":[]}</span></div>
       <p class="caption">
@@ -264,14 +291,39 @@ curl -X POST https://push.example.com/push/send \
     </div>
   </section>
 
-  <section>
+  <section id="install">
     <div class="wrap">
-      <h2>Install once, in three moves</h2>
+      <h2>Install</h2>
+      <p class="ask">Do you already serve a site from a Cloudflare Worker?</p>
+      <div class="fork">
+        <a class="path" href="#standalone">
+          <span class="answer">No</span>
+          <b>Deploy Kukuroo on its own</b>
+          <p>It becomes its own Worker at its own address, serves the enrolment
+          page it ships with, and does nothing else. Five commands, no code to
+          write.</p>
+          <span class="go">Standalone setup &rarr;</span>
+        </a>
+        <a class="path" href="#mount">
+          <span class="answer">Yes</span>
+          <b>Mount it into that Worker</b>
+          <p>Three lines in the Worker you already have. The push routes join
+          your site's origin, so a notification tap lands back inside your own
+          site.</p>
+          <span class="go">Mounted setup &rarr;</span>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <section id="standalone">
+    <div class="wrap">
+      <h2>Standalone</h2>
       <div class="steps">
         <div class="step">
           <b>Deploy your Worker</b>
-          <p>Copy the template, generate your keys with one command, deploy.
-          Storage provisions itself.</p>
+          <p>Copy the template, pick the hostname it will answer on, generate
+          your keys with one command, deploy. Storage provisions itself.</p>
           <div class="term">npm install kukuroo
 cp -r node_modules/kukuroo/templates/standalone my-kukuroo
 cd my-kukuroo &amp;&amp; npm install
@@ -280,9 +332,9 @@ npx wrangler deploy</div>
         </div>
         <div class="step">
           <b>Put it on your Home Screen</b>
-          <p>Open your new page in Safari, Add to Home Screen, type the invite
-          code. Thirty seconds, once per device. That is Apple's one rule, and
-          the only manual step in the whole thing.</p>
+          <p>Open your new page in Safari, Add to Home Screen, open it from the
+          icon, type the invite code. Thirty seconds, once per device. That is
+          Apple's one rule, and the only manual step in the whole thing.</p>
         </div>
         <div class="step">
           <b>POST when something happens</b>
@@ -290,44 +342,93 @@ npx wrangler deploy</div>
           The response tells you exactly how many devices it reached.</p>
         </div>
       </div>
+      <p class="more"><a href="https://github.com/saiday/kukuroo#standalone">The full standalone setup, step by step &rarr;</a></p>
     </div>
   </section>
 
-  <section>
+  <section id="mount">
     <div class="wrap">
-      <h2>The fine print</h2>
-      <p class="fineprint">
-        <b>Told straight:</b> receiving needs Safari, iOS 18.4 or later on a
-        phone, and one send reaches about 50 devices on the free plan. Every
-        limit and sharp edge is written down plainly in
-        <a href="https://github.com/saiday/kukuroo#readme">the README</a>,
-        before you deploy anything, because that is where trust comes from.
+      <h2>Mounted into a Worker you already have</h2>
+      <div class="steps">
+        <div class="step">
+          <b>Hand it your requests first</b>
+          <p><code>handle</code> returns null for anything outside its prefix,
+          so your own routing is untouched.</p>
+          <div class="term">import { mountKukuroo } from <span class="str">"kukuroo"</span>;
+
+const kukuroo = mountKukuroo({ prefix: <span class="str">"/push"</span> });
+
+export default {
+  async fetch(request, env) {
+    const hit = await kukuroo.handle(request, env);
+    return hit ?? yourExistingRouter(request, env);
+  },
+};</div>
+        </div>
+        <div class="step">
+          <b>Bind KV, then generate the keys</b>
+          <p>The binding name is fixed; the namespace itself provisions on your
+          next deploy. Same one-command setup as standalone.</p>
+          <div class="term"><span class="cmt">// wrangler.jsonc</span>
+"kv_namespaces": [{ "binding": "KUKUROO_SUBS" }]
+
+<span class="cmt"># then</span>
+npm install kukuroo &amp;&amp; npx kukuroo init</div>
+        </div>
+        <div class="step">
+          <b>Serve enrolment on your origin</b>
+          <p>Return the bundled page from any route of yours, or build your own
+          against <code>/push/subscribe</code>. Devices then enrol on your
+          site's hostname, which is where a notification tap should land.</p>
+          <div class="term">import { enrolmentPage } from <span class="str">"kukuroo"</span>;
+
+return new Response(enrolmentPage({
+  subscribePath: <span class="str">"/push/subscribe"</span>,
+  publicKeyPath: <span class="str">"/push/public-key"</span>,
+}), { headers: { <span class="str">"content-type"</span>: <span class="str">"text/html"</span> } });</div>
+        </div>
+      </div>
+      <p class="more"><a href="https://github.com/saiday/kukuroo#mounted">The full mounted setup, step by step &rarr;</a></p>
+    </div>
+  </section>
+
+  <section id="prerequisites">
+    <div class="wrap">
+      <h2>Prerequisites</h2>
+      <p class="opinionated">
+        Kukuroo is opinionated, and the list of things it supports is short on
+        purpose. All of it, before you install anything:
       </p>
+      <ul class="spec">
+        <li><b>Cloudflare Workers.</b> The only place it runs. No Docker image,
+        no binary, no other host, and nothing to keep alive.</li>
+        <li><b>Safari.</b> Declarative Web Push has not shipped anywhere else
+        yet: no Chrome, no Firefox, no Android. Unsupported browsers are turned
+        away at the enrolment page rather than left half working.</li>
+        <li><b>iOS 18.4 or later</b>, with the page added to your Home Screen
+        and opened from the icon. A Safari tab will not do, and that is Apple's
+        rule rather than ours. macOS Safari 18.5 receives too, if you can think
+        of a reason to want notifications on the machine you are already staring
+        at.</li>
+        <li><b>About 50 devices per send</b> on Cloudflare's free plan, which is
+        the subrequest ceiling and roughly 47 more phones than one person owns.
+        The README does the arithmetic.</li>
+      </ul>
     </div>
   </section>
 </main>
 
 <footer>
   <div class="wrap">
-    <span><a href="https://github.com/saiday/kukuroo/blob/main/LICENSE">MIT</a>.
-    Installed so far by exactly one person, who wrote it. Be the second.</span>
-    <span><a href="https://github.com/saiday/kukuroo">github.com/saiday/kukuroo</a></span>
+    <a href="https://github.com/saiday/kukuroo/blob/main/LICENSE">MIT licence</a>
   </div>
 </footer>
 
 <script>
-  // The hours strike once on arrival, and on request after that.
+  // The hours strike once, on arrival.
   var moments = document.getElementById("moments");
-  var replay = document.getElementById("replay");
-  var animated = matchMedia("(prefers-reduced-motion: no-preference)").matches;
-  if (animated) {
+  if (matchMedia("(prefers-reduced-motion: no-preference)").matches) {
     requestAnimationFrame(function () { moments.classList.add("strike"); });
-    replay.hidden = false;
-    replay.addEventListener("click", function () {
-      moments.classList.remove("strike");
-      void moments.offsetWidth;
-      moments.classList.add("strike");
-    });
   } else {
     moments.classList.remove("armed");
   }

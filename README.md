@@ -32,12 +32,11 @@ wherever the instructions say `kukuroo`, in both the top-level install and the
 `dependencies` of the copied template's `package.json`. Expect rough edges,
 and please report them.
 
-The two permanence rules come first because they are the two mistakes that
-cannot be undone, and people hit them before they write any code.
-
-- [Two things are permanent](#two-things-are-permanent)
 - [Setup](#setup)
+  - [Standalone](#standalone)
+  - [Mounted](#mounted)
 - [Using Kukuroo with an existing website](#using-kukuroo-with-an-existing-website)
+- [Two things you cannot undo](#two-things-you-cannot-undo)
 - [iOS notes](#ios-notes)
 - [API](#api)
 - [Alternatives](#alternatives)
@@ -46,70 +45,35 @@ cannot be undone, and people hit them before they write any code.
 
 ---
 
-## Two things are permanent
-
-Both of these destroy every existing subscription **silently**. Nothing logs an
-error, nothing returns a 4xx, no event fires on the device. Notifications simply
-stop arriving, and you find out days later when you notice the quiet.
-
-Read these before you deploy anything.
-
-### 1. Choose the origin before anyone enrols, and never change it
-
-A push subscription is bound to an **origin**. `https://push.example.com` and
-`https://kukuroo.your-subdomain.workers.dev` are different origins, so a
-subscription created against one is worthless against the other. There is no
-migration path and no way to re-point an existing subscription: every device has
-to be enrolled again by hand.
-
-So decide the final hostname **first**, and then shut the doors you are not using.
-
-**`preview_urls: false` is not optional.** A preview URL is a real, working,
-enrollable origin, and it is *per version*. Enrol against one during a
-five-minute test and you get a subscription that appears to work and then never
-delivers anything again.
-
-**A custom domain is recommended, but `workers.dev` is supported.** If you do not
-have a domain on Cloudflare, `<worker>.<subdomain>.workers.dev` is a legitimate
-permanent origin: it is stable indefinitely. Two things move it, and both are
-under your control, so treat them as one-way doors:
-
-- **never rename the Worker**, and
-- **never change your account subdomain**.
-
-```jsonc
-// wrangler.jsonc, with a domain
-"workers_dev": false,
-"preview_urls": false,
-"routes": [{ "pattern": "push.example.com", "custom_domain": true }]
-
-// wrangler.jsonc, without one
-"workers_dev": true,
-"preview_urls": false
-```
-
-### 2. Generate the VAPID keypair once, and never rotate it
-
-The VAPID keypair identifies your sender to the push service. Every stored
-subscription is bound to the public key it was created with. Regenerate the
-keypair and every one of them stops accepting your messages, silently, exactly as
-in rule 1.
-
-Generate it once. Store the private key as a Worker Secret. **Keep an offline copy
-somewhere you will still have in three years**, because losing it forces
-regeneration, and regeneration is the failure above. A password manager entry is
-enough; the point is that it is not only in Cloudflare.
-
-Do not put the private key on the machine that sends notifications. It calls
-`/push/send` with a bearer token instead, so the key lives in exactly one place.
-
----
-
 ## Setup
 
 You need a Cloudflare account (the free plan is enough; see
 [the fan-out ceiling](#how-many-devices-one-send-can-reach)), Node 22.6 or
-later, and a device on iOS 18.4+ or macOS Safari 18.4+ to receive.
+later, and a device on iOS 18.4+ or macOS Safari 18.5+ to receive.
+
+### Do you already serve a site from a Cloudflare Worker?
+
+One question decides the rest.
+
+**No** → [**Standalone**](#standalone). Kukuroo deploys as its own Worker at its
+own address and serves the enrolment page it ships with. Five commands, no code
+to write.
+
+**Yes** → [**Mounted**](#mounted). Three lines in the Worker you already have.
+The push routes join your site's origin, so a notification tap lands back inside
+your site.
+
+Neither shape has to live on your website's domain, and a static site with no
+Worker at all can still enrol devices cross-origin. If neither answer fits,
+[Using Kukuroo with an existing
+website](#using-kukuroo-with-an-existing-website) lays out all five topologies.
+
+Two values are permanent whichever shape you pick: the **origin** devices enrol
+on, and the **VAPID keypair**. Changing either kills every subscription with no
+error anywhere. The steps below carry the reminder where it applies; [Two things
+you cannot undo](#two-things-you-cannot-undo) is the why.
+
+### Standalone
 
 The order is the point. Everything up to step 5 happens before any device is
 touched.
@@ -123,15 +87,15 @@ npm install
 ```
 
 Open `wrangler.jsonc` and pick one of the origin options it offers: your own
-hostname, or `workers.dev`. Everything else in it is already set, including the
-`KUKUROO_SUBS` KV binding, whose name is not configurable; the namespace itself
-is provisioned automatically on the first deploy.
+hostname, or `workers.dev`. Everything else in it is already set, including
+`preview_urls: false` (leave it there: a preview URL is a real, enrollable
+origin, and it is *per version*) and the `KUKUROO_SUBS` KV binding, whose name
+is not configurable; the namespace itself is provisioned automatically on the
+first deploy.
 
-This is the decision that cannot be taken back once a device is enrolled.
-
-*Mounting into a Worker you already have instead?* Skip the template. Import
-`mountKukuroo`, leave `standalone` off, add the KV binding, and serve enrolment
-from your own page. See [API](#api).
+This is the decision that cannot be taken back once a device is enrolled. With
+no domain on Cloudflare, `workers.dev` is a legitimate permanent origin, as long
+as you never rename the Worker and never change your account subdomain.
 
 **2. Generate every secret, once, in one command.**
 
@@ -197,6 +161,115 @@ icon**, then enable notifications and enter the invite code.
 Enrolling from a Safari tab does not work on iOS. This is the step people get
 wrong, which is why it is last.
 
+### Mounted
+
+There is no template to copy here: the origin, the domain, and the deploy
+pipeline already exist, and the origin question is already answered, because
+your site's hostname is the origin. What is missing is a KV namespace, three
+secrets, four routes, and a page a phone can install.
+
+**1. Install it, and hand it your requests first.**
+
+```sh
+npm install kukuroo
+```
+
+```ts
+import { mountKukuroo, type KukurooEnv } from "kukuroo";
+
+// No `standalone`, so `/push/enroll` is not routed at all: you serve your own
+// enrolment page, on your own origin, in step 4.
+const kukuroo = mountKukuroo({ prefix: "/push" });
+
+export default {
+  async fetch(request: Request, env: KukurooEnv): Promise<Response> {
+    const hit = await kukuroo.handle(request, env);
+    if (hit !== null) return hit;
+    return yourExistingRouter(request, env);
+  },
+};
+```
+
+`handle` returns `null` for every path outside `prefix`, so your own routing is
+untouched. Pick a `prefix` that does not collide with a route you already serve;
+`/push` is the default.
+
+**2. Add the KV binding and the navigate origin.**
+
+```jsonc
+// your existing wrangler.jsonc
+"kv_namespaces": [{ "binding": "KUKUROO_SUBS" }],
+"vars": {
+  "KUKUROO_NAVIGATE_ORIGIN": "https://www.example.com"
+}
+```
+
+`KUKUROO_SUBS` is not configurable; Kukuroo looks for exactly that name. Leaving
+out `id` lets wrangler create the namespace on your next deploy.
+`KUKUROO_NAVIGATE_ORIGIN` is what keeps a notification tap inside the installed
+web app: mounting makes same-origin *likely*, and this makes it enforced.
+
+**3. Generate every secret, once, in one command.**
+
+```sh
+npx kukuroo init
+```
+
+Run it from the directory holding your `wrangler.jsonc`, so it talks to the
+Worker you mean. It generates the VAPID keypair, a send token, and an invite
+code; installs the three secrets into the Worker; writes them all to
+`kukuroo.credentials.json` at mode 0600; adds that file to your `.gitignore`;
+and prints the invite code.
+
+**Keep that file.** It is not a convenience, it is the only copy. A Worker Secret
+is write-only: `wrangler secret list` returns names and never values, so once the
+VAPID private key is in Cloudflare and nowhere else, it is gone. Back it up
+somewhere you will still have in three years.
+
+**4. Serve an enrolment page on your own origin.**
+
+The page Kukuroo ships, from any route of yours:
+
+```ts
+import { enrolmentPage } from "kukuroo";
+
+if (url.pathname === "/notifications") {
+  return new Response(
+    enrolmentPage({
+      subscribePath: "/push/subscribe",
+      publicKeyPath: "/push/public-key",
+    }),
+    { headers: { "content-type": "text/html; charset=utf-8" } },
+  );
+}
+```
+
+Or build your own UI against `POST /push/subscribe`; `src/enroll-page.ts` is the
+fifteen lines of client JS to copy. Either way, on iOS the page has to be
+installable (`apple-mobile-web-app-capable`, or a web app manifest), because
+enrolment only works from the Home Screen icon.
+
+**5. Deploy, probe, then enrol.**
+
+```sh
+npx wrangler deploy
+curl -s https://www.example.com/push/public-key
+# expect: {"publicKey":"BA..."}
+```
+
+That one probe proves three things at once: the routes are mounted, the secrets
+are installed, and the VAPID key imports cleanly. An error body here names the
+missing piece.
+
+Then the phone, and only then: open your enrolment page in Safari, **Add to Home
+Screen**, **open it from the icon**, and enter the invite code. Enrolling from a
+Safari tab does not work on iOS.
+
+**To send from your own Worker, skip the token entirely.** It already holds the
+bindings, so `import { send } from "kukuroo"` and call `send(env, ...)` in
+process; see [Sending](#sending). The send token exists for callers *outside* the
+Worker, and it is in `kukuroo.credentials.json` under `sendToken`.
+
 ### Rotating
 
 Only the VAPID keypair is permanent. The other two are not bound to anything and
@@ -232,9 +305,9 @@ retry, locking the safe with the only key inside it.
 
 The short version: **Kukuroo does not need to live on your website's domain.**
 
-A push subscription is bound to exactly two things: the origin of the page the
-device enrolled from (rule 1), and the VAPID keypair (rule 2). The Worker's own
-address is neither. Whatever sends notifications only needs to reach
+A push subscription is bound to exactly two things, and they are [the two you
+cannot undo](#two-things-you-cannot-undo): the origin of the page the device
+enrolled from, and the VAPID keypair. The Worker's own address is neither. Whatever sends notifications only needs to reach
 `/push/send` over HTTPS, and the push service neither knows nor cares where that
 request came from. So the real question is not "how do I bind Kukuroo to my
 domain" but "which origin should devices enrol on", and there are five shapes:
@@ -249,7 +322,8 @@ server should be able to page me", this shape is complete.
 **2. Mounted into a Worker you already have.** Your site is itself a Cloudflare
 Worker: import `mountKukuroo` and the push routes share your site's origin.
 Serve the bundled page from any route of yours with the exported
-`enrolmentPage()`, or build your own UI against `/push/subscribe`.
+`enrolmentPage()`, or build your own UI against `/push/subscribe`. Steps in
+[Mounted](#mounted).
 
 **3. On your site's own hostname, via a route.** Your site is hosted anywhere,
 but its DNS is proxied through Cloudflare: attach the standalone Worker to a
@@ -275,7 +349,8 @@ you instead of Cloudflare. It must be a real proxy that rewrites the Host
 header; a bare DNS CNAME pointed at `workers.dev` is not one, and fails at
 Cloudflare's edge. The `workers.dev` address is plumbing in this shape: enrol
 only through your site's hostname, because a device enrolled directly at
-`workers.dev` is on the wrong origin, which is rule 1's mistake.
+`workers.dev` is on an origin you are not going to keep serving from, which is
+the [permanent](#two-things-you-cannot-undo) mistake.
 
 **5. Anywhere, cross-origin from the browser.** A fully static site (GitHub
 Pages, an S3 bucket), no proxy, DNS not on Cloudflare: set
@@ -289,9 +364,10 @@ views source.
 
 Four caveats for shapes 2 to 5:
 
-- The enrolled origin becomes **your site's** hostname, so rule 1 now applies to
-  it. Site hostnames are things nobody renames, which is exactly why this is the
-  recommended place to be.
+- The enrolled origin becomes **your site's** hostname, so the
+  [permanence](#two-things-you-cannot-undo) applies to it. Site hostnames are
+  things nobody renames, which is exactly why this is the recommended place to
+  be.
 - Receiving is a Safari-family affair today: no other engine has shipped
   Declarative Web Push yet (Chromium is implementing, Mozilla's position is
   positive), so visitors on other browsers are turned away by the enrolment
@@ -306,12 +382,42 @@ Four caveats for shapes 2 to 5:
 
 ---
 
+## Two things you cannot undo
+
+Two values are permanent, and changing either destroys every existing
+subscription **silently**: nothing logs an error, nothing returns a 4xx, no event
+fires on the device. Notifications simply stop arriving, and you find out days
+later when you notice the quiet.
+
+- **The origin devices enrol on.** A subscription is bound to it and cannot be
+  re-pointed, so moving hostnames means enrolling every device again by hand.
+  Anyone who has changed a domain can fill in the rest. Pick the final one before
+  anyone enrols, and leave `preview_urls: false`, since a preview URL is a real,
+  enrollable origin and it is *per version*. Without a domain, `workers.dev` is
+  stable indefinitely; only renaming the Worker or changing your account
+  subdomain moves it.
+- **The VAPID keypair.** It is what identifies you to Apple's push service, and
+  every stored subscription is bound to the public key it was created with, so a
+  new keypair is accepted by the push service and delivered to nobody.
+  `kukuroo init` generates it once and writes it to `kukuroo.credentials.json`.
+  A Worker Secret cannot be read back, which makes that file the only copy: back
+  it up somewhere you will still have in three years, and keep the private key
+  off the machine that sends notifications, which needs nothing but the bearer
+  token.
+
+There is no rotate for either, on purpose; asking for one prints an explanation
+instead. The send token and the invite code are bound to nothing and rotate
+freely: see [Rotating](#rotating).
+
+---
+
 ## iOS notes
 
 - **Requires iOS 18.4 or later.** Declarative Web Push shipped in Safari 18.4 in
   March 2025. Any claim that it needs iOS 26 is wrong.
 - **Add to Home Screen is required.** Web push does not work in a normal Safari
-  tab on iOS, though it does on macOS.
+  tab on iOS, though it does on macOS (Safari 18.5, macOS 15.5, or later:
+  Declarative Web Push reached the desktop one release after iOS).
 - **There is no service worker.** Safari 18.4 exposes `window.pushManager`, so a
   subscription exists without one. That also means there is no
   `pushsubscriptionchange` handler: a dead subscription is discovered from a 410
@@ -420,14 +526,6 @@ them before sending rather than letting the failure be silent.
 That is not "displayed on the phone", and nothing in the protocol reports the
 latter. **A `delivered` of 0 is a failure, not a quiet success**: it is the only
 signal you get that nothing is enrolled.
-
-**Mounted** into an existing Worker, the host serves its own enrolment UI and
-posts to `/push/subscribe`. This is the recommended shape: same origin as the app
-you already have, which sidesteps every question about where a notification is
-allowed to navigate.
-
-**Standalone**, Kukuroo serves the bundled enrolment page at `/push/enroll` and is
-a pure notification sink.
 
 ### How many devices one send can reach
 
