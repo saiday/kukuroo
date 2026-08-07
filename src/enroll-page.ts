@@ -89,7 +89,8 @@ if (iOS && !installed) {
 } else if (!("pushManager" in window)) {
   gate.hidden = false;
   gate.textContent = "This browser does not support Declarative Web Push. " +
-    "iOS 18.4 or later is required.";
+    "It needs Safari: 18.4 or later on iOS, installed to the Home Screen, " +
+    "or 18.5 or later on macOS, where a normal tab works.";
   form.hidden = true;
 }
 
