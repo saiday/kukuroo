@@ -43,7 +43,7 @@
   // "routes": [{ "pattern": "www.example.com/push/*", "zone_name": "example.com" }],
   //
   // Devices then enrol at your site's own origin, which is where notification
-  // taps should land anyway. See "Using Kukuroo with an existing website" in the
+  // clicks should land anyway. See the origins table under "Mounted" in the
   // README.
 
   // Subscriptions. The binding name is not configurable; Kukuroo looks for
@@ -63,8 +63,8 @@
     "KUKUROO_NAVIGATE_ORIGIN": "https://push.example.com"
 
     // If pages on another origin call subscribe and public-key from the
-    // browser (README: "Using Kukuroo with an existing website", option 5),
-    // list their exact origins:
+    // browser (README: the origins table under "Mounted", last row), list
+    // their exact origins:
     //
     // ,"KUKUROO_ALLOWED_ORIGINS": "https://www.example.com"
   }

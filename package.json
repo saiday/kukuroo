@@ -1,7 +1,7 @@
 {
   "name": "kukuroo",
   "version": "0.1.0",
-  "description": "Send Web Push notifications to your own devices from anything. Cloudflare Worker + KV, Declarative Web Push, no third-party service.",
+  "description": "A Cloudflare Worker as your self-hosted Web Push service: iOS push notifications with no server, no vendor, no native app.",
   "type": "module",
   "license": "MIT",
   "exports": {
