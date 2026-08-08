@@ -63,7 +63,7 @@
     "KUKUROO_NAVIGATE_ORIGIN": "https://push.example.com"
 
     // If pages on another origin call subscribe and public-key from the
-    // browser (README: "Using Kukuroo with an existing website", shape 5),
+    // browser (README: "Using Kukuroo with an existing website", option 5),
     // list their exact origins:
     //
     // ,"KUKUROO_ALLOWED_ORIGINS": "https://www.example.com"

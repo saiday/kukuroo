@@ -14,12 +14,13 @@
 
 export const TEMPLATE_ANSWERS = { frontEnd: true, requireInvite: true };
 
-/** Where the README explains the shape somebody just chose. */
+/** Where the README explains whatever the operator just chose. */
 export const README = "https://github.com/saiday/kukuroo";
 export const README_SECTIONS = {
   standalone: `${README}#standalone`,
   mounted: `${README}#mounted`,
   ownUi: `${README}#using-kukuroo-with-an-existing-website`,
+  api: `${README}#api`,
 };
 
 /**

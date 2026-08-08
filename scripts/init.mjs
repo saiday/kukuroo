@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 //
-// One-time setup. Asks two questions, writes a deployable Worker, generates
-// every secret Kukuroo needs, writes them to a local 0600 file, and installs
-// them into the Worker.
+// One-time setup. Asks up to three questions, writes a deployable Worker,
+// generates every secret Kukuroo needs, writes them to a local 0600 file, and
+// installs them into the Worker.
 //
-// The two questions between them decide whether this deployment is a personal
-// one. They are asked here, once, rather than left as options nobody discovers:
-// an invite gate added after a stranger has enrolled is not the same thing as
-// one that was there first, and an enrolment page is either the reason the
-// Worker exists or a route that should never have been mounted.
+// The questions between them decide whether this deployment is a personal one.
+// They are asked here, once, rather than left as options nobody discovers: an
+// invite gate added after a stranger has enrolled is not the same thing as one
+// that was there first, and an enrolment page is either the reason the Worker
+// exists or a route that should never have been mounted.
 //
 // This exists because a Worker Secret is write-only. `wrangler secret list`
 // returns names, never values, so a setup flow that says "generate a send token
@@ -329,13 +329,11 @@ async function chooseShape(rl) {
 const FRONT_END = {
   prompt: "Use the bundled front end?",
   default: true,
-  intro: `  Kukuroo ships one page: the thing a phone opens, adds to its Home Screen,
-  and enrols from. It is a single file with no build step, and it is the whole
-  front end most deployments ever need.
+  intro: `  Generates the page a phone opens in Safari, adds to the Home Screen, and
+  enrols from. One file, no build step.
 
-  Answer no if you are building your own enrolment UI, or already have a site
-  that should host it. Kukuroo cannot be a pure API on iOS, so something has to
-  serve a page either way; this asks whether that something is us.
+  yes  the out-of-box setup. Nothing to build.
+  no   you build your own UI against the API: ${README_SECTIONS.api}
 
   Sets \`standalone\` on mountKukuroo().`,
 };
@@ -345,7 +343,7 @@ const SHAPE = {
 
   1) Its own Worker, at its own address. This script writes the project; you
      deploy it and point your UI at it.
-  2) Mounted into a Worker you already run, three lines inside your own fetch
+  2) Mounted into a Worker you already run: three lines inside your own fetch
      handler, so the routes sit on your site's origin and a tap lands back
      inside your site. Nothing is scaffolded.`,
   default: "standalone",
@@ -354,13 +352,14 @@ const SHAPE = {
 const INVITE = {
   prompt: "Require an invite code to enrol a device?",
   default: false,
-  intro: `  A one-time code, typed once on the phone. Without it, anyone who reaches
-  the enrolment page can add their own device and will receive everything you
-  send afterwards. With it, they cannot.
+  intro: `  Stops a stranger who finds your URL from enrolling their own device and
+  receiving everything you send.
 
-  Answer yes if this deployment is for you and your own devices. The code is
-  generated and installed either way, so the answer is not permanent: it is
-  \`requireInvite\` on mountKukuroo(), one word in a file you own.`,
+  yes  this deployment is for your own devices.
+  no   the notifications are for whoever turns up.
+
+  Sets \`requireInvite\` on mountKukuroo(). The code is generated either way, so
+  changing your mind later is one word and a deploy, and nothing re-enrols.`,
 };
 
 /**
@@ -488,13 +487,21 @@ function scaffold(dir, answers) {
   writeFileSync(join(target, "src", "worker.ts"), workerSource(answers));
   writeFileSync(join(target, ".gitignore"), SCAFFOLD_GITIGNORE);
 
-  console.log(`\n  wrote ${dir}/wrangler.jsonc        the Worker's name and origin`);
-  console.log(`  wrote ${dir}/src/worker.ts         mountKukuroo({ prefix: "/push",`);
-  console.log(`                                      standalone: ${answers.frontEnd},`);
-  console.log(`                                      requireInvite: ${answers.requireInvite} })`);
-  console.log(`  wrote ${dir}/package.json          kukuroo ${spec}`);
-  console.log(`  wrote ${dir}/tsconfig.json`);
-  console.log(`  wrote ${dir}/.gitignore`);
+  // The annotations line up against the longest path, so a long directory name
+  // does not leave the second and third lines of the mount call hanging.
+  const files = ["wrangler.jsonc", "src/worker.ts", "package.json", "tsconfig.json", ".gitignore"];
+  const column = Math.max(...files.map((f) => `${dir}/${f}`.length)) + 4;
+  const row = (file, note = "") => `  wrote ${`${dir}/${file}`.padEnd(column)}${note}`.trimEnd();
+  const gutter = " ".repeat(column + 8);
+
+  console.log("");
+  console.log(row("wrangler.jsonc", "the Worker's name and origin"));
+  console.log(row("src/worker.ts", 'mountKukuroo({ prefix: "/push",'));
+  console.log(`${gutter}standalone: ${answers.frontEnd},`);
+  console.log(`${gutter}requireInvite: ${answers.requireInvite} })`);
+  console.log(row("package.json", `kukuroo ${spec}`));
+  console.log(row("tsconfig.json"));
+  console.log(row(".gitignore"));
 
   return target;
 }
@@ -582,11 +589,9 @@ async function provisionSecrets() {
  */
 function backupNote(where, indent = "   ") {
   return [
-    `Back up ${where} somewhere you will still have in three years.`,
-    "A password manager entry is enough. The VAPID private key in that file cannot",
-    "be recovered from Cloudflare: secrets are write-only, so losing it means",
-    "re-enrolling every device by hand. Nothing from it goes into wrangler.jsonc;",
-    "the key is a JWK, so the public half is derived and served at /push/public-key.",
+    `Back up ${where}. Cloudflare cannot give it back:`,
+    "secrets are write-only, so losing this file means re-enrolling every device",
+    "by hand. A password manager entry is enough.",
   ].join("\n" + indent);
 }
 
@@ -606,10 +611,10 @@ notifications reads it from there, or from a copy you place yourself:
      ${credentials.inviteCode}
 `);
   } else {
-    console.log(`Enrolment is open: anyone who reaches the enrolment page can add their own
-device, and will then receive everything you send. That was the answer to the
-first question. To close it, set requireInvite: true and deploy; the code is
-already generated and installed, so nothing re-enrols:
+    console.log(`Enrolment is open: anyone who reaches your enrolment page can add their own
+device, and will then receive everything you send. That is what you asked for.
+To close it later, set requireInvite: true and deploy. The code below is already
+generated and installed, so nothing re-enrols:
 
      ${credentials.inviteCode}
 `);
@@ -627,56 +632,73 @@ async function standaloneSetup(dir, answers) {
 
   const credentials = await provisionSecrets();
 
+  const steps = [
+    backupNote(`${dir}/kukuroo.credentials.json`),
+
+    `Open ${dir}/wrangler.jsonc and pick the origin: your own hostname, or
+   workers.dev. Settle it before anyone enrols. A subscription is bound to the
+   origin it was created on, so once devices are enrolled, changing the origin
+   stops all of them with no error anywhere, and each one has to enrol again by
+   hand. The keys are not the problem and do not change; the origin is.`,
+  ];
+
   // Without our page, nothing can enrol until the origin serving the operator's
   // own UI is allowed to call subscribe from a browser. That is a step, not a
   // footnote: skip it and the first enrolment fails in the console with a CORS
-  // error that names nothing.
-  const ownUiStep = answers.frontEnd
-    ? ""
-    : `
-4. Add the origin serving your enrolment UI to KUKUROO_ALLOWED_ORIGINS in
-   ${dir}/wrangler.jsonc. There is no enrolment page on this Worker, so until
+  // error that names nothing. It goes before the deploy, because it is another
+  // line in the same file the deploy publishes.
+  if (!answers.frontEnd) {
+    steps.push(
+      `In the same file, add the origin serving your enrolment UI to
+   KUKUROO_ALLOWED_ORIGINS. There is no enrolment page on this Worker, so until
    that list has your site on it, no browser is allowed to call /push/subscribe.
-   ${README_SECTIONS.ownUi}
-`;
+   ${README_SECTIONS.ownUi}`,
+    );
+  }
+
+  steps.push(
+    answers.frontEnd
+      ? `Deploy it, and enrol your phone.
+
+     cd ${dir}
+     npx wrangler deploy
+
+   Then, on the phone: open the origin in Safari, Add to Home Screen, open it
+   from the icon, and allow notifications. Enrolling from a Safari tab does not
+   work; that is Apple's rule, not ours.${
+     answers.requireInvite ? "\n   The page asks for the invite code, which is at the end of this output." : ""
+   }`
+      : `Deploy it.
+
+     cd ${dir}
+     npx wrangler deploy
+
+   Then enrol a device from your own page. On iOS it has to be added to the
+   Home Screen and opened from the icon first; a Safari tab cannot subscribe.`,
+  );
 
   console.log(`
 Done. ${dir} is a deployable Worker, and every secret is installed.
 
-${answers.frontEnd ? "Three" : "Four"} things left, in this order.
+${["One", "Two", "Three", "Four"][steps.length - 1]} things left, in this order.
 
-1. ${backupNote(`${dir}/kukuroo.credentials.json`)}
+${steps.map((step, i) => `${i + 1}. ${step}`).join("\n\n")}
 
-2. Open ${dir}/wrangler.jsonc and pick the origin. It offers your own hostname
-   or workers.dev, and it is the one decision here that cannot be taken back: a
-   push subscription is bound to the origin it was created on, so changing it
-   later stops every enrolled device, silently.
+That is setup. From then on, a notification is one request:
 
-3. Deploy, and probe it.
+     curl -X POST https://<your origin>/push/send \\
+       -H "authorization: Bearer <the send token, below>" \\
+       -H 'content-type: application/json' \\
+       -d '{"notification":{"title":"hello","navigate":"https://<your origin>/"}}'
 
-     cd ${dir}
-     npx wrangler deploy
-     curl -s https://<your origin>/push/public-key
-
-   That probe proves the deploy landed, the secrets are installed, and the VAPID
-   key imports.${
-     answers.frontEnd
-       ? ` Only then, on the phone: open the origin in Safari, Add to Home
-   Screen, open it from the icon${answers.requireInvite ? ", and enter the invite code" : ""}.
-   Enrolling from a Safari tab does not work; that is Apple's rule, not ours.`
-       : ""
-   }
-${ownUiStep}
-The standalone shape, written out: ${README_SECTIONS.standalone}`);
+Everything else, in more detail: ${README_SECTIONS.standalone}`);
 
   printCredentialsNote(credentials, answers);
 }
 
 async function mountedSetup(answers, { dirGiven }) {
   if (dirGiven) {
-    console.log(
-      "\nIgnoring the directory argument: the mounted shape has no project to create.",
-    );
+    console.log("\nIgnoring the directory argument: mounted has no project to create.");
   }
   console.log(`
 Mounted, then. Your Worker already has an origin, so the routes belong on it and
@@ -684,7 +706,7 @@ there is nothing to scaffold. Paste this into the Worker you already run:
 
 ${mountedSnippet(answers)}
 
-The mounted shape, written out: ${README_SECTIONS.mounted}
+Everything else, in more detail: ${README_SECTIONS.mounted}
 
 Setting up the secrets here, in ${workDir}. This has to be the directory holding
 that Worker's wrangler config, since that is what says which Worker they go to.`);
@@ -693,7 +715,10 @@ that Worker's wrangler config, since that is what says which Worker they go to.`
   console.log(`
 Done. The secrets are installed on the Worker this directory deploys.
 
-1. ${backupNote("kukuroo.credentials.json")}`);
+${backupNote("kukuroo.credentials.json", "")}
+
+Then deploy your Worker as you always do, and the push routes are live on the
+origin you already own.`);
   printCredentialsNote(credentials, answers);
 }
 
