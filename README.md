@@ -1,320 +1,92 @@
 # Kukuroo
 
-Send Web Push notifications to your own devices from anything.
+Your own Web Push service, on a Cloudflare Worker.
 
-**Receiving is Safari-family only today:** an iPhone or iPad on iOS 18.4+, or
-macOS Safari 18.5+. Declarative Web Push has not shipped in Chrome or Firefox
-yet, so Android and other browsers cannot enrol. *Sending* works from anything
-that can make an HTTPS request.
+Kukuroo stores push subscriptions in KV, serves the page a device enrols from, and
+encrypts and signs every notification itself. There is no server to keep alive and no
+notification vendor in the path: you hold the keys, and the push service relays
+ciphertext it cannot read.
 
-A Cloudflare Worker plus KV that stores push subscriptions, serves the iOS
-Add-to-Home-Screen enrolment page, and exposes one authenticated `POST`.
-TypeScript, zero runtime dependencies, Declarative Web Push, no third-party
-service.
+It uses **Declarative Web Push**, which so far has only shipped in Safari, so receiving
+needs an iPhone or iPad on iOS 18.4+, or macOS Safari 18.5+. Chrome, Firefox, and Android
+cannot enrol. Sending works from anything that can make a request: curl, cron, CI, or a
+backend you already run.
 
-There is no server to run: no host, no TLS to renew, no process to keep alive.
-You keep the keys. The push service relays ciphertext it cannot read, and no
-notification vendor sits in the middle.
+**Requirements.** A Cloudflare account, Node 22.6 or later, and `npx wrangler login` once.
 
-```
-anything holding the send token              the platform push service
-(curl, cron, CI, your backend)               (web.push.apple.com)
-         |                                             ^
-         |  POST /push/send                            |  RFC 8291 ciphertext,
-         v                                             |  VAPID ES256 signed
-  +------------------+   one encrypt+sign per device   |
-  | Kukuroo (Worker) |---------------------------------+
-  +------------------+
-         |
-  [ KV: subscriptions ]  <--  POST /push/subscribe  <--  the enrolment page,
-                                                         on your Home Screen
-```
-
-**Status: early.** The code works and is tested end to end against a real
-iPhone, but it has been installed by exactly one person, who wrote it. Expect
-rough edges, and please report them.
-
-- [Setup](#setup)
-  - [Standalone](#standalone)
-  - [Mounted](#mounted)
-- [Using Kukuroo with an existing website](#using-kukuroo-with-an-existing-website)
-- [Two things you cannot undo](#two-things-you-cannot-undo)
-- [iOS notes](#ios-notes)
-- [API](#api)
-- [Alternatives](#alternatives)
-- [Development](#development)
-- [Contributing](#contributing)
-
----
-
-## Setup
-
-You need a Cloudflare account (the free plan is enough; see
-[the fan-out ceiling](#how-many-devices-one-send-can-reach)), Node 22.6 or
-later, and a device on iOS 18.4+ or macOS Safari 18.5+ to receive.
-
-### Standalone or mounted?
-
-[**Standalone**](#standalone) is its own Worker at its own address, serving the
-enrolment page it ships with: two questions, one command, and no code to write.
-[**Mounted**](#mounted) is three lines inside a Worker you already run, which
-puts the push routes on your site's origin so a notification tap lands back
-inside your site.
-
-**You do not have to decide first.** `npx kukuroo init` asks, and the first
-question decides most of it:
-
-```
-Use the bundled front end?
-├── yes ──────────────► standalone, with the enrolment page.        one command
-│                       Nothing to build. Nothing to decide.
-└── no ─── Where do the push routes live?
-           ├── its own Worker ──► standalone, API only.  Your UI, another origin
-           └── mounted ─────────► three lines in the Worker you already run
-
-then, either way: Require an invite code to enrol a device?
-```
-
-Find your line, if you would rather:
-
-- I don't run a Cloudflare Worker yet. → [**Standalone**](#standalone)
-- I run one, and notification taps should land inside my own site. →
-  [**Mounted**](#mounted)
-- I run one, but push can live on its own address, away from my site. →
-  [**Standalone**](#standalone)
-- I have my own enrolment UI, or a site that should host it. → either way,
-  answering **no** to the front-end question. See [Using Kukuroo with an existing
-  website](#using-kukuroo-with-an-existing-website).
-
-Running a Worker does not oblige you to mount into it. Neither has to live on
-your website's domain, and a static site with no Worker at all can still enrol
-devices cross-origin; that section lays out all five.
-
-Two values are permanent either way: the **origin** devices enrol on, and the
-**VAPID keypair**. Changing either kills every subscription with no error
-anywhere. The steps below carry the reminder where it applies; [Two things
-you cannot undo](#two-things-you-cannot-undo) is the why.
-
-### Standalone
-
-Four steps. The order is the point: steps 1 and 2 finish before any device
-enrols, because step 2 settles a value you cannot change afterwards.
-
-**1. Answer the questions, and get a Worker.**
+## Install
 
 ```sh
 npx kukuroo init my-push
 ```
 
-That is the whole of the interactive part. It asks what it needs, writes a
-deployable project into `my-push`, installs its dependencies, generates every
-secret, and puts the secrets on the Worker. What is left is one file edit, one
-deploy, and one `curl`.
+That is the interactive part. It asks two or three questions, writes a deployable Worker
+into `my-push`, installs its dependencies, generates every secret, and puts the secrets on
+Cloudflare. It also writes `my-push/kukuroo.credentials.json`, the only copy of your keys:
+a Worker Secret cannot be read back, so back that file up.
 
-> **Use the bundled front end?** *(default: yes)*
->
-> Generates the page a phone opens in Safari, adds to the Home Screen, and enrols
-> from. One file, no build step.
->
-> - **yes**: the out-of-box setup. Nothing to build.
-> - **no**: you build your own UI against [the API](#api).
->
-> Written into `my-push/src/worker.ts` as `standalone: true` or `false`. If you
-> mount instead, it goes into the snippet `init` prints for you to paste.
-
-> **Then where do the push routes live?** *(asked only if you said no above)*
->
-> 1. **Its own Worker**, at its own address. `init` writes the project; you
->    deploy it and point your UI at it.
-> 2. **[Mounted](#mounted)** into a Worker you already run: three lines inside
->    your own fetch handler, so the routes sit on your site's origin and a tap
->    lands back inside your site. Nothing is scaffolded.
->
-> Saying yes to the bundled page settles this: it is served by a Worker of its
-> own.
-
-> **Require an invite code to enrol a device?** *(default: no)*
->
-> Stops a stranger who finds your URL from enrolling their own device and
-> receiving everything you send.
->
-> - **yes**: this deployment is for your own devices.
-> - **no**: the notifications are for whoever turns up.
->
-> Written into `my-push/src/worker.ts` as `requireInvite: true` or `false`. The
-> code is generated either way, so changing your mind later is one word in that
-> file and a deploy, and nothing re-enrols.
->
-> The *library* default is `true`, and only an explicit `false` opens the gate.
-> The wizard's default is no, and it writes your answer out either way, so no
-> Worker ends up open because an option was forgotten.
-
-**Answer the prompts, or pass the answers as flags.** Whatever you pass on the
-command line is not asked about; whatever you leave out is. The wizard and the
-direct command are the same path through the same questions:
+Then pick the origin in `my-push/wrangler.jsonc`, either a hostname you own or a
+`workers.dev` address, and deploy:
 
 ```sh
-npx kukuroo init                                   # asks what it needs
-npx kukuroo init my-push --front-end --invite      # asks nothing
-npx kukuroo init my-push --no-front-end --standalone --no-invite
-npx kukuroo init --no-front-end --mounted          # no project, just the keys
-npx kukuroo init my-push --yes                     # bundled page, no invite gate
+cd my-push && npx wrangler deploy
 ```
 
-`--front-end` / `--no-front-end`, `--standalone` / `--mounted`, `--invite` /
-`--no-invite`, `--yes`. Without a TTY the defaults are taken and printed, so CI
-never hangs on a prompt. Note what `--yes` means for the third question: the
-default is **no** invite gate, so enrolment is open unless you say otherwise.
-
-There is also `npx kukuroo init --secrets`: no questions, no scaffolding, just
-generate the keys and install them on the Worker whose `wrangler.jsonc` is in
-the current directory. It is the recovery path, and the shortest route for a
-mounted deployment that has already pasted the code.
-
-What it wrote:
-
-```
-my-push/wrangler.jsonc     the Worker's name, origin, and KV binding
-my-push/src/worker.ts      mountKukuroo({ prefix, standalone, requireInvite })
-my-push/package.json
-my-push/tsconfig.json
-my-push/.gitignore
-my-push/kukuroo.credentials.json    mode 0600, the only copy of your keys
-```
-
-Every answer is written out in `src/worker.ts`, including the ones that match the
-defaults, because that file is the only place your choices are visible. Without
-the bundled front end, `standalone: false` is written instead, `/push/enroll` is
-not routed, and the origin serving your own UI has to be added to
-`KUKUROO_ALLOWED_ORIGINS` before a browser is allowed to enrol from it.
-
-**Nothing to paste into `wrangler.jsonc`.** The keypair is stored as a JWK, so
-the public half is derived from it and served at `/push/public-key`. Two values
-that have to agree forever is a failure waiting to happen, so there is one.
-
-**Keep the credentials file.** It is not a convenience, it is the only copy. A
-Worker Secret is write-only: `wrangler secret list` returns names and never
-values, so once the VAPID private key is in Cloudflare and nowhere else, it is
-gone. Back it up somewhere you will still have in three years.
-
-**2. Decide the origin.**
-
-Open `my-push/wrangler.jsonc`. It ships with three options; keep one and delete
-the others.
-
-```jsonc
-// A: your own hostname. The zone has to be on Cloudflare already; the deploy
-//    provisions the DNS record and the certificate.
-"workers_dev": false,
-"routes": [{ "pattern": "push.example.com", "custom_domain": true }],
-
-// B: no domain of your own. Delete the two lines above and uncomment this,
-//    and your origin becomes https://my-push.<your-subdomain>.workers.dev
-// "workers_dev": true,
-
-// C: a path on a website you already have, if its DNS is on Cloudflare.
-// "routes": [{ "pattern": "www.example.com/push/*", "zone_name": "example.com" }],
-```
-
-Then set `KUKUROO_NAVIGATE_ORIGIN`, in the same file, to that same origin. It is
-what keeps a notification tap inside the installed web app instead of dropping
-the user into a browser tab.
-
-**Settle this before anyone enrols.** It is the one decision here that cannot be
-taken back: a subscription is bound to the origin it was created on, so once
-devices are enrolled, changing the origin stops all of them with no error
-anywhere, and each one has to enrol again by hand. Your keys are not the problem
-and do not change; the origin is.
-
-With no domain on Cloudflare, option B is a legitimate permanent origin, as long
-as you never rename the Worker and never change your account subdomain. Option C
-is worth a look if you already have a site, because it puts enrolment on your
-site's own hostname; it is one of [five ways to combine Kukuroo with an existing
-website](#using-kukuroo-with-an-existing-website).
-
-Everything else in the file is already set, including `preview_urls: false`
-(leave it there: a preview URL is a real, enrollable origin, and it is *per
-version*) and the `KUKUROO_SUBS` KV binding, whose name is not configurable; the
-namespace itself is provisioned on the first deploy.
-
-`init` deliberately ran *before* any deploy, which is why the origin can still be
-decided here: `wrangler secret put` creates a draft Worker on demand.
-
-**3. Deploy it, and enrol your phone.**
+Then, on the device: open that origin in Safari, **Add to Home Screen**, and open it **from
+the icon** to allow notifications. Enrolling from a Safari tab does not work on iOS, which
+is Apple's rule rather than ours; [the enrolment
+guide](docs/create-pwa-and-subscribe-to-push.md) covers the rest of the behaviour worth
+knowing. From then on, a notification is one request:
 
 ```sh
-cd my-push
-npx wrangler deploy
-```
-
-**wrangler prints the deployed URL, and that is your origin.** Every
-`push.example.com` below stands for whatever it printed.
-
-Wait two or three minutes before touching the phone. This deploy is what
-attaches the custom domain and provisions the KV namespace, and until it settles
-the origin serves a mix of old and new versions.
-
-Then, on the phone: open your origin in Safari, **Add to Home Screen**, **open
-it from the icon**, and allow notifications. If you asked for an invite code, the
-page asks for it here; if you did not, there is no field and the button is the
-whole of it.
-
-Enrolling from a Safari tab does not work on iOS. This is the step people get
-wrong. (On macOS a normal Safari window is fine, from 18.5.)
-
-**4. Send the first one.**
-
-```sh
-node -p 'require("./kukuroo.credentials.json").sendToken' > ~/.kukuroo-send-token
-chmod 600 ~/.kukuroo-send-token
-
 curl -X POST https://push.example.com/push/send \
-  -H "authorization: Bearer $(cat ~/.kukuroo-send-token)" \
+  -H "authorization: Bearer $SEND_TOKEN" \
   -H 'content-type: application/json' \
   -d '{"notification":{"title":"hello","navigate":"https://push.example.com/"}}'
-# expect: {"delivered":1,"removed":0,"failures":[]}
 ```
 
-`delivered: 0` means nothing is enrolled; see [Sending](#sending). That is the
-whole of it. Anything that can make an HTTPS request can now notify your phone.
+## Two values worth settling first
 
-*If something is wrong,* `curl -s https://push.example.com/push/public-key`
-proves three things at once: the deploy reached the origin, the secrets are
-installed, and the VAPID key imports cleanly. An error body there names the
-missing piece.
+Both are fixed once a device has enrolled. Changing either is not destructive, but it does
+mean enrolling every device again by hand, and the two fail for different reasons.
 
-*Rather not run `init`?* Copy
-[`templates/standalone`](https://github.com/saiday/kukuroo/tree/main/templates/standalone)
-from the repo; it is the same project `init` writes. Then generate all four
-values **before** you touch Cloudflare, and write them down first. The trap is generating a send token,
-piping it straight into `wrangler secret put`, and discovering at first send that
-there is no way to read it back.
+- **The VAPID keypair.** The push service binds your public key to each subscription when
+  it is created, and checks every send's signature against that stored key. Sign with a new
+  keypair and it answers 401 or 403, so nothing is delivered. `kukuroo init` generates the
+  keypair once and writes it to `kukuroo.credentials.json`, which is the only copy of it.
+- **The origin devices enrol on.** The push service never sees or checks this, so devices
+  already enrolled keep receiving after a move. What you lose is your own side of it: a page
+  on a different origin cannot read or repair subscriptions created on the old one, so you
+  can neither re-subscribe nor verify them, and a notification click navigates to an address
+  you no longer serve. Settle the hostname before anyone enrols, and leave
+  `preview_urls: false`, because a preview URL is a real enrollable origin and it is *per
+  version*.
 
-### Mounted
+The send token and the invite code are bound to nothing and rotate freely.
 
-There is no template to copy here: the origin, the domain, and the deploy
-pipeline already exist, and the origin question is already answered, because
-your site's hostname is the origin. What is missing is a KV namespace, three
-secrets, four routes, and a page a phone can install.
+## Standalone
 
-**1. Install it, and hand it your requests first.**
+Kukuroo runs as its own Worker at its own address, serving the enrolment page it ships
+with. Nothing to build and nothing to write: `init` scaffolds the project, and the origin is
+whatever you put in `wrangler.jsonc`.
 
-```sh
-npm install kukuroo
-```
+This is the shape to pick when you do not already run a Cloudflare Worker, or when push can
+live at its own address away from your site. Your website, wherever it is hosted, is not
+involved at all: it only needs to hold the send token and POST to `/push/send` when
+something happens.
+
+Answering **no** to the bundled front end keeps the same shape but routes no enrolment page,
+so you serve your own UI and add its origin to `KUKUROO_ALLOWED_ORIGINS`.
+
+## Mounted
+
+Mounting puts the push routes inside a Worker you already run, so they share your site's
+origin and a notification click lands back inside your site.
 
 ```ts
 import { mountKukuroo, type KukurooEnv } from "kukuroo";
 
-// `standalone: false`, so `/push/enroll` is not routed at all: you serve your
-// own enrolment page, on your own origin, in step 4. Both options are written
-// out rather than left to default, because this call is the only place your
-// deployment's answers are visible.
-const kukuroo = mountKukuroo({
-  prefix: "/push",
-  standalone: false,
-  requireInvite: true,
-});
+const kukuroo = mountKukuroo({ prefix: "/push", standalone: false, requireInvite: true });
 
 export default {
   async fetch(request: Request, env: KukurooEnv): Promise<Response> {
@@ -325,266 +97,28 @@ export default {
 };
 ```
 
-`handle` returns `null` for every path outside `prefix`, so your own routing is
-untouched. Pick a `prefix` that does not collide with a route you already serve;
-`/push` is the default. `requireInvite: false` is what opens enrolment to
-anyone who reaches the URL; leave it `true` for a personal deployment.
+`handle` returns `null` for every path outside `prefix`, so your own routing is untouched.
+Add the KV binding, `"kv_namespaces": [{ "binding": "KUKUROO_SUBS" }]`, whose name is not
+configurable; set `KUKUROO_NAVIGATE_ORIGIN`; then run `npx kukuroo init --secrets` from the
+directory holding that `wrangler.jsonc`. Serve the bundled page from any route of yours with
+the exported `enrolmentPage()`, or build your own UI against `POST /push/subscribe`.
 
-**2. Add the KV binding and the navigate origin.**
+Mounting is not the only way to get enrolment onto your own hostname, and Kukuroo does not
+have to live on your domain at all. The only thing that matters is which origin devices
+enrol on:
 
-```jsonc
-// your existing wrangler.jsonc
-"kv_namespaces": [{ "binding": "KUKUROO_SUBS" }],
-"vars": {
-  "KUKUROO_NAVIGATE_ORIGIN": "https://www.example.com"
-}
-```
+| Your setup | How enrolment happens on your own origin |
+|---|---|
+| Your site is a Cloudflare Worker | mount, as above |
+| Your site's DNS is on Cloudflare, hosted anywhere | a standalone Worker on a route: `{ "pattern": "www.example.com/push/*", "zone_name": "example.com" }` |
+| You run a proxy or CDN in front of your site | proxy `/push/*` to the Worker's `workers.dev` address |
+| A static site, DNS elsewhere | set `KUKUROO_ALLOWED_ORIGINS` and call the Worker's absolute URLs from the browser |
 
-`KUKUROO_SUBS` is not configurable; Kukuroo looks for exactly that name. Leaving
-out `id` lets wrangler create the namespace on your next deploy.
-`KUKUROO_NAVIGATE_ORIGIN` is what keeps a notification tap inside the installed
-web app: mounting makes same-origin *likely*, and this makes it enforced.
-
-**3. Generate every secret, once, in one command.**
-
-```sh
-npx kukuroo init --no-front-end --mounted   # or answer the questions
-npx kukuroo init --secrets                  # or skip the questions entirely
-```
-
-Run it from the directory holding your `wrangler.jsonc`, so it talks to the
-Worker you mean. `--mounted` is what tells it there is nothing to scaffold: it
-prints the `mountKukuroo` call to paste, with your answers already in it, and
-does the keys. It generates the VAPID keypair, a send token, and an invite code;
-installs the three secrets into the Worker; writes them all to
-`kukuroo.credentials.json` at mode 0600; adds that file to your `.gitignore`; and
-prints the invite code.
-
-Nothing is written into your source on this path, so the `requireInvite` you see
-printed is the one *you* have to keep in step 1's call and in step 4's page. A
-page that does not ask for a code the endpoint demands is simply broken.
-
-**Keep that file.** It is not a convenience, it is the only copy. A Worker Secret
-is write-only: `wrangler secret list` returns names and never values, so once the
-VAPID private key is in Cloudflare and nowhere else, it is gone. Back it up
-somewhere you will still have in three years.
-
-**4. Serve an enrolment page on your own origin.**
-
-The page Kukuroo ships, from any route of yours:
-
-```ts
-import { enrolmentPage } from "kukuroo";
-
-if (url.pathname === "/notifications") {
-  return new Response(
-    enrolmentPage({
-      subscribePath: "/push/subscribe",
-      publicKeyPath: "/push/public-key",
-      requireInvite: true,   // must match what you passed mountKukuroo
-    }),
-    { headers: { "content-type": "text/html; charset=utf-8" } },
-  );
-}
-```
-
-Or build your own UI against `POST /push/subscribe`;
-[`src/enroll-page.ts`](https://github.com/saiday/kukuroo/blob/main/src/enroll-page.ts)
-(also at `node_modules/kukuroo/src/enroll-page.ts`) is the fifteen lines of
-client JS to copy. Either way, on iOS the page has to be installable (`apple-mobile-web-app-capable`, or a web app manifest), because
-enrolment only works from the Home Screen icon.
-
-**5. Deploy, then enrol.**
-
-```sh
-npx wrangler deploy
-```
-
-Then the phone, and only then: open your enrolment page in Safari, **Add to Home
-Screen**, **open it from the icon**, and allow notifications, entering the invite
-code if you asked for one. Enrolling from a Safari tab does not work on iOS.
-
-*If something is wrong,* `curl -s https://www.example.com/push/public-key` proves
-three things at once: the routes are mounted, the secrets are installed, and the
-VAPID key imports cleanly. An error body there names the missing piece.
-
-**To send from your own Worker, skip the token entirely.** It already holds the
-bindings, so `import { send } from "kukuroo"` and call `send(env, ...)` in
-process; see [Sending](#sending). The send token exists for callers *outside* the
-Worker, and it is in `kukuroo.credentials.json` under `sendToken`.
-
-### Rotating
-
-Only the VAPID keypair is permanent. The other two are not bound to anything and
-can be replaced whenever you like, with no device re-enrolling:
-
-```sh
-npx kukuroo rotate send-token
-npx kukuroo rotate invite-code
-```
-
-Both require `kukuroo.credentials.json`. If you set your deployment up by hand
-and have no such file, rotate with `wrangler secret put` directly and start
-keeping the value somewhere yourself.
-
-There is no rotate for the VAPID keypair, on purpose. Asking for one prints
-an explanation rather than doing it.
-
-### If setup is interrupted
-
-```sh
-npx kukuroo init --resume
-```
-
-Finishes the job from the local credentials file. The file is written **before**
-anything is uploaded, precisely so this is possible: were it the other way round,
-a failure partway would leave the VAPID key in Cloudflare, which cannot be read
-back, with no copy anywhere else, and the overwrite guard would then refuse the
-retry, locking the safe with the only key inside it.
-
----
-
-## Using Kukuroo with an existing website
-
-The short version: **Kukuroo does not need to live on your website's domain.**
-
-A push subscription is bound to exactly two things, and they are [the two you
-cannot undo](#two-things-you-cannot-undo): the origin of the page the device
-enrolled from, and the VAPID keypair. The Worker's own address is neither. Whatever sends notifications only needs to reach
-`/push/send` over HTTPS, and the push service neither knows nor cares where that
-request came from. So the real question is not "how do I bind Kukuroo to my
-domain" but "which origin should devices enrol on", and there are five answers:
-
-**1. Its own origin, notifying you.** The default, and what the template
-deploys. Kukuroo lives at `push.example.com` or `workers.dev`, you add its
-enrolment page to your Home Screen, and your website is not involved at all.
-Your site's backend on AWS, GCP, or anywhere else is just one more thing holding
-the send token and calling `POST /push/send` when something happens. For "my
-server should be able to page me", this is complete as it stands.
-
-**2. Mounted into a Worker you already have.** Your site is itself a Cloudflare
-Worker: import `mountKukuroo` and the push routes share your site's origin.
-Serve the bundled page from any route of yours with the exported
-`enrolmentPage()`, or build your own UI against `/push/subscribe`. Steps in
-[Mounted](#mounted).
-
-**3. On your site's own hostname, via a route.** Your site is hosted anywhere,
-but its DNS is proxied through Cloudflare: attach the standalone Worker to a
-path on the hostname you already have, and Cloudflare intercepts those requests
-before they reach your origin server, which never sees them.
-
-```jsonc
-// wrangler.jsonc, replacing the custom_domain route
-"routes": [{ "pattern": "www.example.com/push/*", "zone_name": "example.com" }]
-```
-
-Enrolment then happens at `https://www.example.com/push/enroll`, on your site's
-own origin, so a notification tap lands back inside your site. Set
-`KUKUROO_NAVIGATE_ORIGIN` to match. This asks nothing of your origin server, but
-it does require the zone: Worker routes only exist on domains active on
-Cloudflare. If your DNS lives elsewhere, use option 4.
-
-**4. Behind your own reverse proxy.** You control a server or CDN in front of
-your site: proxy `/push/*` to the Worker's `workers.dev` hostname (an nginx
-`location`, a CloudFront behavior), with `workers_dev` left on so the Worker has
-an address to proxy to. Same result as option 3, with the proxied hop owned by
-you instead of Cloudflare. It must be a real proxy that rewrites the Host
-header; a bare DNS CNAME pointed at `workers.dev` is not one, and fails at
-Cloudflare's edge. The `workers.dev` address is plumbing here: enrol
-only through your site's hostname, because a device enrolled directly at
-`workers.dev` is on an origin you are not going to keep serving from, which is
-the [permanent](#two-things-you-cannot-undo) mistake.
-
-**5. Anywhere, cross-origin from the browser.** A fully static site (GitHub
-Pages, an S3 bucket), no proxy, DNS not on Cloudflare: set
-`KUKUROO_ALLOWED_ORIGINS` to your site's exact origin and have your page call
-the Worker's absolute URLs. `subscribe` and `public-key` then answer
-cross-origin requests from exactly those origins, on every response including
-the error ones, so your page can show what went wrong. `/push/send` never gets
-CORS headers, whatever the list says: the send token is a server secret, and a
-page that holds one should fail its first test, not work quietly until someone
-views source.
-
-Four caveats for options 2 to 5:
-
-- The enrolled origin becomes **your site's** hostname, so the
-  [permanence](#two-things-you-cannot-undo) applies to it. Site hostnames are
-  things nobody renames, which is exactly why this is the recommended place to
-  be.
-- Receiving is a Safari-family affair today: no other engine has shipped
-  Declarative Web Push yet (Chromium is implementing, Mozilla's position is
-  positive), so visitors on other browsers are turned away by the enrolment
-  check rather than left half-working.
-- On iOS the enrolling page must still be installed to the Home Screen, so the
-  site needs the installability metadata (`apple-mobile-web-app-capable`, or a
-  web app manifest). If you build your own UI,
-  [`src/enroll-page.ts`](https://github.com/saiday/kukuroo/blob/main/src/enroll-page.ts)
-  is the fifteen lines of client JS to copy.
-- The invite code is one shared secret, designed for devices *you invite*, not
-  for anonymous visitor signup. Turning it off with `requireInvite: false` is
-  what open signup looks like, and it is a deliberate answer, not a shortcut:
-  everyone who enrols receives everything you send. Before pointing any crowd at
-  an enrolment page either way, read
-  [the fan-out ceiling](#how-many-devices-one-send-can-reach).
-
----
-
-## Two things you cannot undo
-
-Two values are permanent, and changing either destroys every existing
-subscription **silently**: nothing logs an error, nothing returns a 4xx, no event
-fires on the device. Notifications simply stop arriving, and you find out days
-later when you notice the quiet.
-
-- **The origin devices enrol on.** A subscription is bound to it and cannot be
-  re-pointed, so moving hostnames means enrolling every device again by hand.
-  Anyone who has changed a domain can fill in the rest. Pick the final one before
-  anyone enrols, and leave `preview_urls: false`, since a preview URL is a real,
-  enrollable origin and it is *per version*. Without a domain, `workers.dev` is
-  stable indefinitely; only renaming the Worker or changing your account
-  subdomain moves it.
-- **The VAPID keypair.** It is what identifies you to Apple's push service, and
-  every stored subscription is bound to the public key it was created with, so a
-  new keypair is accepted by the push service and delivered to nobody.
-  `kukuroo init` generates it once and writes it to `kukuroo.credentials.json`.
-  A Worker Secret cannot be read back, which makes that file the only copy: back
-  it up somewhere you will still have in three years, and keep the private key
-  off the machine that sends notifications, which needs nothing but the bearer
-  token.
-
-There is no rotate for either, on purpose; asking for one prints an explanation
-instead. The send token and the invite code are bound to nothing and rotate
-freely: see [Rotating](#rotating).
-
----
-
-## iOS notes
-
-- **Requires iOS 18.4 or later.** Declarative Web Push shipped in Safari 18.4 in
-  March 2025. Any claim that it needs iOS 26 is wrong.
-- **Add to Home Screen is required.** Web push does not work in a normal Safari
-  tab on iOS, though it does on macOS (Safari 18.5, macOS 15.5, or later:
-  Declarative Web Push reached the desktop one release after iOS).
-- **There is no service worker.** Safari 18.4 exposes `window.pushManager`, so a
-  subscription exists without one. That also means there is no
-  `pushsubscriptionchange` handler: a dead subscription is discovered from a 410
-  on the next send, and re-enrolment is manual.
-- **Deleting the Home Screen icon destroys the subscription.** Nothing reports
-  this. If notifications matter to you, send yourself a daily "still alive" ping,
-  because absence of a scheduled message is the only reliable signal that the
-  channel has died.
-- **`app_badge` moved position between Safari versions**, and Apple never
-  documented the move: inside `notification` on 18.4 through 18.6, top level on
-  26.0 and later. Kukuroo emits it in **both** positions, so callers never have
-  to know which iOS a device is on. Measured on iOS 26.5.2: the top-level
-  position sets the badge and the one inside `notification` is ignored entirely,
-  so this is not theoretical tidiness.
-- **There is no badge-only or silent update.** `title` and `navigate` are
-  required on every message, so every push displays a notification. `silent: true`
-  suppresses sound, not the banner. If you want to change the badge, you are also
-  showing the user something.
-
----
+Two traps in that table. The proxy row needs a real proxy that rewrites the `Host` header; a
+bare DNS CNAME pointed at `workers.dev` is not one, and fails at Cloudflare's edge. And
+`/push/send` never receives CORS headers whatever `KUKUROO_ALLOWED_ORIGINS` says, because
+the send token is a server secret and a page holding one should fail its first test rather
+than work quietly.
 
 ## API
 
@@ -595,24 +129,18 @@ GET  /push/public-key  open           the VAPID public key, for the client
 GET  /push/enroll      open           the bundled enrolment page (standalone only)
 ```
 
-`subscribe` is gated unless the deployment says otherwise: with
-`requireInvite: false` it accepts any well-formed subscription, and an `invite`
-in the body is ignored rather than checked.
-
-With `KUKUROO_ALLOWED_ORIGINS` set, `subscribe` and `public-key` also answer
-`OPTIONS` preflights from the listed origins; `send` never does.
+`/push/send` does one encrypt-and-sign per subscription inside a single invocation, which
+has [a ceiling on the free plan](docs/free-plan-device-limits.md).
 
 ```ts
 interface KukurooEnv {
   KUKUROO_SUBS:          KVNamespace
-  KUKUROO_VAPID_PRIVATE: string   // Worker Secret. A JWK; see below
+  KUKUROO_VAPID_PRIVATE: string   // Worker Secret. A JWK
   KUKUROO_SEND_TOKEN:    string   // Worker Secret
   KUKUROO_INVITE_CODE:   string   // Worker Secret
   KUKUROO_VAPID_PUBLIC?: string   // only if the key is a bare 32-byte scalar
 }
 
-// `env` is supplied per request, not at construction, because that is how
-// Workers hand it to you.
 const kukuroo = mountKukuroo({
   prefix: "/push",          // where the route set lives. Default "/push"
   standalone: false,        // serve the bundled enrolment page at <prefix>/enroll
@@ -621,41 +149,23 @@ const kukuroo = mountKukuroo({
 await kukuroo.handle(request, env)   // Response, or null if the path is not ours
 ```
 
-`requireInvite` is the one option that is a decision rather than a detail. Off,
-enrolment is open to anyone who reaches the URL, which is right for a
-channel meant for whoever turns up and wrong for a personal push
-endpoint: the gate is what stops a stranger from enrolling their own device and
-reading the titles of everything you send. Only an explicit `false` opens it, so
-a missing or misspelled option leaves the gate standing. `KUKUROO_INVITE_CODE`
-stays generated and installed either way, so closing an open gate is one word
-and a deploy, and nothing re-enrols.
+`requireInvite` is the one option that is a decision rather than a detail. Off, enrolment is
+open to anyone who reaches the URL, and everyone who enrols receives everything you send.
+Only an explicit `false` opens it, and `KUKUROO_INVITE_CODE` is generated and installed
+either way, so closing an open gate is one word and a deploy, with nothing re-enrolling.
 
 Three optional vars:
 
-- `KUKUROO_VAPID_SUBJECT`: the VAPID `sub` claim, a `mailto:` or `https:` URI.
-  Defaults to the push service's own origin, which is accepted but identifies
-  nobody.
-- `KUKUROO_ALLOWED_ORIGINS`: comma-separated exact origins whose pages may call
-  `subscribe` and `public-key` from the browser, for option 5 of
-  [the website section](#using-kukuroo-with-an-existing-website). Unset, no
-  CORS headers are sent. There is no wildcard: the list of pages that may enrol
-  a device is short, and writing it out is the point.
-- `KUKUROO_NAVIGATE_ORIGIN`: if set, every notification's `navigate` must be on
-  this origin. **Set it.** Mounting Kukuroo into your own Worker is what keeps
-  taps inside the installed web app, but mounting alone only makes that likely;
-  this makes it enforced. A `navigate` that leaves the origin ejects the user
-  into a browser tab. It does not restrict `icon`, which legitimately points at
-  a CDN.
+- `KUKUROO_NAVIGATE_ORIGIN`: every notification's `navigate` must be on this origin. **Set
+  it.** Serving push and enrolment from one origin only makes same-origin likely, and this
+  makes it enforced; a `navigate` that leaves the origin ejects the user into a browser tab.
+  It does not restrict `icon`, which legitimately points at a CDN.
+- `KUKUROO_ALLOWED_ORIGINS`: comma-separated exact origins whose pages may call `subscribe`
+  and `public-key` from the browser. Unset, no CORS headers are sent. There is no wildcard.
+- `KUKUROO_VAPID_SUBJECT`: the VAPID `sub` claim, a `mailto:` or `https:` URI. Defaults to
+  the push service's own origin, which is accepted but identifies nobody.
 
-Also exported: `enrolmentPage(options)` returns the bundled enrolment page as an
-HTML string, so a mounted deployment can serve it from any route on its own
-origin instead of building a UI. Pass it the same `requireInvite` you gave
-`mountKukuroo`: a page that asks for a code the endpoint ignores is confusing,
-and a page that does not ask for one the endpoint demands is broken. `buildDeclarativePayload` and `importVapidKeys`
-are exported individually too, for callers that want the validation or the key
-handling without the routes.
-
-### Sending
+Sending from inside your own Worker needs no token, since it already holds the bindings:
 
 ```ts
 import { send } from "kukuroo";
@@ -665,146 +175,36 @@ const result = await send(env, {
     title: "Deploy finished",
     body: "main to production, 42s",
     navigate: "https://push.example.com/deploys",  // required, and absolute
-    tag: "deploys",                                 // replaces its predecessor
+    tag: "deploys",                                // replaces its predecessor
   },
   appBadge: 1,
 });
 
-// { delivered: 1, removed: 0, failures: [] }
 if (result.delivered === 0) throw new Error("no devices are enrolled");
 ```
 
-Or over HTTP, from anything at all:
+`navigate` and a non-empty `title` are required, and an `icon`, if present, must be an
+absolute URL. Get any of them wrong and WebKit discards the whole message with no error
+anywhere, so Kukuroo rejects them before sending. `delivered` counts subscriptions the push
+service accepted the message for, which is not the same as displayed on a device; a
+`delivered` of 0 is a failure, not a quiet success.
 
-```sh
-curl -X POST https://push.example.com/push/send \
-  -H "authorization: Bearer $(cat ~/.kukuroo-send-token)" \
-  -H 'content-type: application/json' \
-  -d '{"notification":{"title":"hello","navigate":"https://push.example.com/"}}'
-```
-
-`navigate` is **required and must be absolute**; so is a non-empty `title`. An
-`icon`, if present, must be a valid absolute URL. Get any of those wrong and
-WebKit discards the entire message with no error anywhere, so Kukuroo rejects
-them before sending rather than letting the failure be silent.
-
-`delivered` counts subscriptions the push service *accepted* the message for.
-That is not "displayed on the phone", and nothing in the protocol reports the
-latter. **A `delivered` of 0 is a failure, not a quiet success**: it is the only
-signal you get that nothing is enrolled.
-
-### How many devices one send can reach
-
-Two Cloudflare limits apply to a single `/push/send`.
-
-**Subrequests.** Every push POST is an external `fetch`, and the free plan
-allows 50 of those per invocation, so **a free-plan send tops out at 50
-devices**. (KV traffic is metered separately, as internal-service calls with a
-1,000-per-request budget on free, which this arithmetic never approaches.) Past
-the 50th device the remaining sends fail into `failures`, and `delivered` says
-honestly how far the fan-out got. On the paid plan the limit is 10,000 and
-configurable beyond, which moves this ceiling out of a personal deployment's
-range.
-
-**CPU.** `/push/send` does one ES256 signature and one aes128gcm encryption per
-subscription, all inside a single invocation, against the free plan's 10 ms CPU
-budget. Measured against local `workerd` (`wrangler dev`) on an Apple M2 Max,
-median of 41 requests per row, with the identical request minus the
-per-subscription crypto subtracted so what is left is the fan-out itself:
-
-| subscriptions | fan-out CPU |
-|---|---|
-| 1 | 0.12 ms |
-| 5 | 0.65 ms |
-| 20 | 2.4 ms |
-| 50 | 6.1 ms |
-| 100 | 11.9 ms |
-
-It is linear: about 0.12 ms per subscription, on top of roughly 0.2 ms of fixed
-work. The crypto alone crosses 10 ms around 80 subscriptions on that desktop
-CPU; Cloudflare's edge hardware is generally slower per core, so on the free
-plan's 10 ms budget the CPU ceiling lands in the same region as the subrequest
-one. The failure modes differ: running out of subrequests still returns an
-honest `SendResult`, while running out of CPU terminates the invocation partway
-through the loop and returns an error, so the `delivered` count that would have
-told you is gone.
-
-**So: the free plan is comfortable to about 20 devices and has real margin to
-50, and 50 is the hard edge, set by subrequests with CPU close behind.** Past
-that, the paid plan is required, and it is the plan rather than the code that is
-the limit.
-
-There is deliberately no batching of the fan-out across invocations. Splitting
-it would trade a limit you can read off a table for a partial-delivery failure
-mode you would have to debug, and the honest fix for "more devices than the free
-plan allows" is a plan that allows more.
-
----
+Also exported: `enrolmentPage(options)`, `buildDeclarativePayload`, and `importVapidKeys`.
+The send token and invite code rotate with `npx kukuroo rotate send-token` and `npx kukuroo
+rotate invite-code`; both read `kukuroo.credentials.json`, and neither re-enrols anything.
 
 ## Alternatives
 
-Surveyed 2026-08-02, because "nothing else does this" is the kind of claim a
-reader can falsify in one search. The axis that separates Kukuroo is
-**serverless**: everything below either runs a process you keep alive or routes
-your notifications through a vendor.
+| | Server to run | Vendor in the path | How it reaches iOS |
+|---|---|---|---|
+| **Kukuroo** | none | none | Web Push, a page on your Home Screen |
+| [ntfy](https://ntfy.sh) | host, domain, TLS, a process | none, self-hosted | Web Push, installable PWA |
+| [Bark](https://github.com/Finb/Bark) | yes, though it can be a Worker | none | App Store app via APNs |
+| [Gotify](https://gotify.net) | yes | none | its own app |
+| [Pushover](https://pushover.net) | none | yes, paid hosted | its own app |
 
-- **[ntfy](https://ntfy.sh)**, ~25k stars: self-hosted or hosted pub-sub
-  notifications, with Web Push and an installable PWA on iOS. Mature and
-  polished; wants a host, a domain, TLS, and a process that stays up. If you are
-  happy hosting and want a full app-like UI, use ntfy.
-- **[go-notify-server](https://github.com/mpizenberg/go-notify-server)**: the
-  closest in spirit, a thin declarative-first Web Push server for your own PWA.
-  Docker and SQLite, bring your own enrolment UI.
-- **[AlphaPush](https://github.com/alkinum/alphapush)**: the nearest
-  architectural twin, also Cloudflare Workers with KV plus D1.
-- **[Bark](https://github.com/Finb/Bark)**: iOS notifications through an App
-  Store app and APNs rather than Web Push; the server half can run on a Worker.
-- **Gotify, Pushover**: an Android-first self-hosted server, and a paid hosted
-  service; both deliver through their own apps.
-
-What none of them offer together: no server to run, no vendor in the path, and
-the enrolment page ships in the box.
-
----
-
-## Development
-
-```sh
-git clone https://github.com/saiday/kukuroo && cd kukuroo
-npm install
-npm test            # RFC 8291 + 8292 round-trip, no network needed
-npm run typecheck
-```
-
-There is no build step. The package ships TypeScript source, and the consumer's
-`wrangler` bundles it; that is also why `engines` asks for Node 22.6+, whose
-type stripping runs the tests directly.
-
-The test suite plays the part of the device: it decrypts what `encryptPayload`
-produced and verifies the VAPID token against the public key, using Node's Web
-Crypto as the user agent. A green run proves the cryptography round-trips byte
-for byte and the HTTP contract holds; the end-to-end check against a real
-iPhone is a manual pass, recorded in the status line above, and not something
-the suite can claim.
-
----
-
-## Contributing
-
-The most valuable report right now is a setup-flow failure. The crypto is
-round-trip tested; the installation path has been walked by one person. If
-`init`, the first deploy, or enrolment fights you, [an issue][issues] naming the
-exact step and what it said is a gift.
-
-Before a pull request: `npm test` and `npm run typecheck` must pass, and two
-things are load-bearing everywhere: nothing may fail silently, and nothing may
-make either permanent value (the origin, the VAPID keypair) silently
-replaceable. Comments in this codebase say *why*, and name the failure mode
-their line prevents; new code should too.
-
-[issues]: https://github.com/saiday/kukuroo/issues
-
----
+If you are happy hosting and want a full app-like UI, use ntfy. It is mature, polished, and
+does considerably more than this.
 
 ## Licence
 

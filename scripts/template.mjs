@@ -19,7 +19,9 @@ export const README = "https://github.com/saiday/kukuroo";
 export const README_SECTIONS = {
   standalone: `${README}#standalone`,
   mounted: `${README}#mounted`,
-  ownUi: `${README}#using-kukuroo-with-an-existing-website`,
+  // The origins table lives under Mounted: choosing where devices enrol is the
+  // same decision as choosing whether to mount, so the README tells it once.
+  ownUi: `${README}#mounted`,
   api: `${README}#api`,
 };
 
