@@ -48,10 +48,6 @@
     display: flex; align-items: baseline; justify-content: space-between; padding-block: 1.4rem;
   }
   .mark { font: 700 1rem var(--mono); letter-spacing: .18em; text-transform: uppercase; }
-  .mark .tick {
-    display: inline-block; width: .5em; height: .5em; border-radius: 50%;
-    background: var(--brass); margin-left: .35em;
-  }
   header a.gh { font-size: .95rem; color: var(--ink); }
 
   /* ---------- hero: why this exists ---------- */
@@ -140,15 +136,11 @@
     .moments.strike .notif:nth-child(1) { animation-delay: .1s; }
     .moments.strike .notif:nth-child(2) { animation-delay: .55s; }
     .moments.strike .notif:nth-child(3) { animation-delay: 1.0s; }
+    .moments.strike .notif:nth-child(4) { animation-delay: 1.45s; }
     @keyframes cuckoo {
       0%   { opacity: 0; transform: translateY(-1.1rem) scale(.9); }
       70%  { opacity: 1; transform: translateY(.2rem) scale(1.01); }
       100% { opacity: 1; transform: none; }
-    }
-    .mark .tick { animation: pulse 60s linear infinite; }
-    @keyframes pulse {
-      0%, 1.2%, 100% { transform: scale(1); }
-      .6% { transform: scale(1.6); }
     }
   }
 
@@ -234,7 +226,7 @@
 <body>
 
 <header class="wrap">
-  <div class="mark">kukuroo<span class="tick" aria-hidden="true"></span></div>
+  <div class="mark">kukuroo</div>
   <a class="gh" href="https://github.com/saiday/kukuroo">GitHub</a>
 </header>
 
@@ -256,7 +248,7 @@
     </div>
 
     <div class="phone" role="img"
-         aria-label="An iPhone lock screen: a task finished and unblocked the next one, a watched item dropped in price, a blog you follow published a post">
+         aria-label="An iPhone lock screen: a task finished and unblocked the next one, a watched item dropped in price, a site finished deploying, a blog you follow published a post">
       <div class="screen">
         <div class="island" aria-hidden="true"></div>
         <div class="lock" aria-hidden="true">
@@ -273,6 +265,11 @@
             <div class="appicon"><svg width="17" height="17" viewBox="0 0 16 16"><path d="M2.3 14V6.4A2.6 2.6 0 0 1 4.9 3.8H11.1A2.6 2.6 0 0 1 13.7 6.4V14Z" fill="#c9a254"/><path d="M4.9 14V8.4A1.8 1.8 0 0 1 6.7 6.6H9.3A1.8 1.8 0 0 1 11.1 8.4V14Z" fill="#203129"/><path d="M7 14V10.6A1 1 0 0 1 9 10.6V14Z" fill="#c9a254"/></svg></div>
             <div><b>Watchlist</b><span class="body">Omnium Cargo is down 14%</span></div>
             <time>9m ago</time>
+          </div>
+          <div class="notif">
+            <div class="appicon"><svg width="17" height="17" viewBox="0 0 16 16"><path d="M2.3 14V6.4A2.6 2.6 0 0 1 4.9 3.8H11.1A2.6 2.6 0 0 1 13.7 6.4V14Z" fill="#c9a254"/><path d="M4.9 14V8.4A1.8 1.8 0 0 1 6.7 6.6H9.3A1.8 1.8 0 0 1 11.1 8.4V14Z" fill="#203129"/><path d="M7 14V10.6A1 1 0 0 1 9 10.6V14Z" fill="#c9a254"/></svg></div>
+            <div><b>Deploy finished</b><span class="body">kukuroo.cc is live</span></div>
+            <time>25m ago</time>
           </div>
           <div class="notif">
             <div class="appicon"><svg width="17" height="17" viewBox="0 0 16 16"><path d="M2.3 14V6.4A2.6 2.6 0 0 1 4.9 3.8H11.1A2.6 2.6 0 0 1 13.7 6.4V14Z" fill="#c9a254"/><path d="M4.9 14V8.4A1.8 1.8 0 0 1 6.7 6.6H9.3A1.8 1.8 0 0 1 11.1 8.4V14Z" fill="#203129"/><path d="M7 14V10.6A1 1 0 0 1 9 10.6V14Z" fill="#c9a254"/></svg></div>
