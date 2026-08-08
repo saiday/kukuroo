@@ -30,13 +30,9 @@ anything holding the send token              the platform push service
                                                          on your Home Screen
 ```
 
-**Status: early, and not yet on npm.** The code works and is tested end to end
-against a real iPhone, but it has been installed by exactly one person, who
-wrote it. Until `0.1.0` is published, substitute `github:saiday/kukuroo` in the
-`npx` and `npm install` commands below, so setup reads
-`npx github:saiday/kukuroo init my-push`; `import` statements still say
-`kukuroo`. Run that way, the project it writes depends on the same source, so its
-first `npm install` works too. Expect rough edges, and please report them.
+**Status: early.** The code works and is tested end to end against a real
+iPhone, but it has been installed by exactly one person, who wrote it. Expect
+rough edges, and please report them.
 
 - [Setup](#setup)
   - [Standalone](#standalone)
