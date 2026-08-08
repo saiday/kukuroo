@@ -20,21 +20,18 @@ backend you already run.
 npx kukuroo init my-push
 ```
 
-That is the interactive part. It asks two or three questions, writes a deployable Worker
-into `my-push`, installs its dependencies, generates every secret, and puts the secrets on
-Cloudflare. It also writes `my-push/kukuroo.credentials.json`, the only copy of your keys:
-a Worker Secret cannot be read back, so back that file up.
+That is the whole of it. It asks what your deployment is for, then writes a Worker into
+`my-push`, installs its dependencies, generates every secret, puts the secrets on
+Cloudflare, and deploys. It also writes `my-push/kukuroo.credentials.json`, the only copy of
+your keys: a Worker Secret cannot be read back, so back that file up.
 
-Then pick the origin in `my-push/wrangler.jsonc`, either a hostname you own or a
-`workers.dev` address, and deploy:
+One of the questions is where devices will enrol, either a `workers.dev` address or a domain
+you already have on Cloudflare. It is asked before the deploy because that is the last
+moment it is free to change.
 
-```sh
-cd my-push && npx wrangler deploy
-```
-
-Then, on the device: open that origin in Safari, **Add to Home Screen**, and open it **from
-the icon** to allow notifications. Enrolling from a Safari tab does not work on iOS, which
-is Apple's rule rather than ours; [the enrolment
+Then, on the device: open the origin it printed in Safari, **Add to Home Screen**, and open
+it **from the icon** to allow notifications. Enrolling from a Safari tab does not work on
+iOS, which is Apple's rule rather than ours; [the enrolment
 guide](docs/create-pwa-and-subscribe-to-push.md) covers the rest of the behaviour worth
 knowing. From then on, a notification is one request:
 
@@ -44,6 +41,10 @@ curl -X POST https://push.example.com/push/send \
   -H 'content-type: application/json' \
   -d '{"notification":{"title":"hello","navigate":"https://push.example.com/"}}'
 ```
+
+Every question also has a flag, so nothing has to be answered interactively: `npx kukuroo
+init --help`. `--no-deploy` sets everything up and stops, if you would rather read the
+generated Worker before it goes live.
 
 ## Two values worth settling first
 
@@ -58,9 +59,9 @@ mean enrolling every device again by hand, and the two fail for different reason
   already enrolled keep receiving after a move. What you lose is your own side of it: a page
   on a different origin cannot read or repair subscriptions created on the old one, so you
   can neither re-subscribe nor verify them, and a notification click navigates to an address
-  you no longer serve. Settle the hostname before anyone enrols, and leave
-  `preview_urls: false`, because a preview URL is a real enrollable origin and it is *per
-  version*.
+  you no longer serve. This is why `init` asks before it deploys. Leave
+  `preview_urls: false` too, because a preview URL is a real enrollable origin and it is
+  *per version*.
 
 The send token and the invite code are bound to nothing and rotate freely.
 

@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 //
-// One-time setup. Asks up to three questions, writes a deployable Worker,
-// generates every secret Kukuroo needs, writes them to a local 0600 file, and
-// installs them into the Worker.
+// One-time setup. Asks up to four questions, writes a deployable Worker,
+// generates every secret Kukuroo needs, writes them to a local 0600 file,
+// installs them into the Worker, and deploys it.
 //
 // The questions between them decide whether this deployment is a personal one.
 // They are asked here, once, rather than left as options nobody discovers: an
@@ -41,7 +41,9 @@ import {
   README_SECTIONS,
   SCAFFOLD_GITIGNORE,
   mountedSnippet,
+  originUrl,
   workerSource,
+  wranglerSource,
 } from "./template.mjs";
 
 // Where the credentials file goes and where wrangler runs. It is the current
@@ -116,6 +118,82 @@ function wrangler(args, { stdin, captureStderr = false } = {}) {
     // expected answer rather than a problem worth showing.
     stdio: ["pipe", "pipe", captureStderr ? "pipe" : "inherit"],
   });
+}
+
+/**
+ * Stop before anything exists if Cloudflare will not talk to us.
+ *
+ * The order everything else runs in is: generate the VAPID keypair, write it to
+ * kukuroo.credentials.json, upload the secrets, deploy. An auth failure lands at
+ * the upload, which is *after* a keypair that can never be rotated exists on
+ * disk, and the overwrite guard in provisionSecrets then refuses the retry. That
+ * is a bad enough trap when the operator is deploying by hand; adding a deploy of
+ * our own to the end only widens the window.
+ *
+ * The exit code is no use here: `wrangler whoami` prints "You are not
+ * authenticated" and still exits 0. So this looks for the positive signal and
+ * stops when it is absent, which is the safe direction to fail in. A false stop
+ * costs one `wrangler login` and prints what wrangler actually said; a false pass
+ * costs an unrecoverable key.
+ */
+function assertAuthenticated() {
+  let output;
+  try {
+    output = wrangler(["whoami"], { captureStderr: true });
+  } catch (error) {
+    output = String(error.stdout ?? "") + String(error.stderr ?? "");
+  }
+
+  if (/logged in|account id|api token/i.test(output)) return;
+
+  die(
+    "Not logged in to Cloudflare, so stopping before anything is generated.\n\n" +
+      "  npx wrangler login\n\n" +
+      "Nothing has happened yet: no keys exist, no files were written, and no Worker\n" +
+      "has been touched. This check is here because the VAPID keypair cannot be\n" +
+      "regenerated, so failing halfway is worse than not starting.\n\n" +
+      "wrangler said:\n\n" +
+      (output.trim() || "(nothing)"),
+  );
+}
+
+/**
+ * Deploy, and hand back what wrangler printed.
+ *
+ * stdout is captured rather than inherited because the workers.dev origin is only
+ * discoverable by reading it, and then echoed in full so the operator still sees
+ * everything wrangler had to say.
+ */
+function deploy() {
+  let output;
+  try {
+    output = wrangler(["deploy"]);
+  } catch (error) {
+    output = String(error.stdout ?? "");
+    console.log(output);
+    die(
+      "The deploy failed.\n\n" +
+        "Your keys are safe: they are in kukuroo.credentials.json and installed on the\n" +
+        "Worker already, so nothing needs regenerating. Fix whatever wrangler named\n" +
+        `above, then deploy again from ${workDir}:\n\n` +
+        "  npx wrangler deploy",
+    );
+  }
+  console.log(output);
+  return output;
+}
+
+/**
+ * The workers.dev origin, read off the deploy wrangler just did.
+ *
+ * Returns null rather than guessing if the output does not contain one. wrangler's
+ * phrasing around the URL is not a contract, and a wrong navigate origin is worse
+ * than an absent one: absent means unenforced, wrong means every notification is
+ * rejected before it is sent.
+ */
+function workersDevUrlFrom(output) {
+  const match = output.match(/https:\/\/[a-z0-9][a-z0-9-]*\.[a-z0-9][a-z0-9-]*\.workers\.dev/i);
+  return match === null ? null : match[0].toLowerCase();
 }
 
 /**
@@ -326,6 +404,67 @@ async function chooseShape(rl) {
   }
 }
 
+/**
+ * Where devices will enrol. Standalone only: a mounted deployment's origin is its
+ * host Worker's, which is already decided and not ours to ask about.
+ *
+ * A hostname, not a URL, because the answer goes into a wrangler route pattern,
+ * which takes neither a scheme nor a path. Taking "https://push.example.com/" and
+ * quietly trimming it would be friendlier right up until the deploy failed with
+ * something about an invalid route.
+ */
+function assertHostname(answer) {
+  if (/^https?:\/\//i.test(answer)) return "just the hostname, with no https:// in front";
+  if (answer.includes("/")) return "just the hostname, with no path";
+  if (answer.includes(":")) return "just the hostname, with no port";
+  if (!/^[a-z0-9][a-z0-9.-]*\.[a-z]{2,}$/i.test(answer)) return "that does not look like a hostname";
+  return null;
+}
+
+async function chooseOrigin(rl) {
+  for (;;) {
+    let answer;
+    try {
+      answer = (await rl.question("Where will devices enrol? [1/2] ")).trim().toLowerCase();
+    } catch {
+      console.log("");
+      die("Cancelled. Nothing was created and no key was generated.");
+    }
+    if (answer === "" || answer === "1" || answer === "workers.dev" || answer === "workers-dev") {
+      return { kind: "workers-dev", url: null };
+    }
+    if (answer === "2" || answer === "domain") {
+      for (;;) {
+        let hostname;
+        try {
+          hostname = (await rl.question("  Hostname, e.g. push.example.com: ")).trim().toLowerCase();
+        } catch {
+          console.log("");
+          die("Cancelled. Nothing was created and no key was generated.");
+        }
+        const complaint = assertHostname(hostname);
+        if (complaint === null) return { kind: "domain", hostname };
+        console.log(`  ${complaint}.`);
+      }
+    }
+    console.log("  1 or 2.");
+  }
+}
+
+const ORIGIN = {
+  default: { kind: "workers-dev", url: null },
+  intro: `  Where will devices enrol?
+
+  This is the one answer worth getting right first. Moving it later does not stop
+  delivery to devices already enrolled, but it does mean you can no longer read or
+  repair their subscriptions, so every device enrols again by hand.
+
+  1) A workers.dev address. Cloudflare provides it, free, and it is stable as long
+     as this Worker keeps its name.
+  2) A domain I already have on Cloudflare. The deploy provisions the DNS record
+     and the certificate.`,
+};
+
 const FRONT_END = {
   prompt: "Use the bundled front end?",
   default: true,
@@ -373,6 +512,7 @@ async function askAnswers(flags) {
     frontEnd: flags.frontEnd,
     shape: flags.shape,
     requireInvite: flags.requireInvite,
+    origin: flags.origin,
   };
   const interactive = process.stdin.isTTY && !flags.yes;
   const rl = interactive ? createInterface({ input: process.stdin, output: process.stdout }) : null;
@@ -405,6 +545,19 @@ async function askAnswers(flags) {
       else {
         console.log(SHAPE.intro + "\n");
         answers.shape = await chooseShape(rl);
+        console.log("");
+      }
+    }
+
+    // Standalone only. A mounted deployment enrols on its host Worker's origin,
+    // which exists already and is not a question we get to ask.
+    if (answers.shape === "standalone" && answers.origin === undefined) {
+      if (!interactive) {
+        console.log("  Where will devices enrol? workers.dev (default)");
+        answers.origin = ORIGIN.default;
+      } else {
+        console.log(ORIGIN.intro + "\n");
+        answers.origin = await chooseOrigin(rl);
         console.log("");
       }
     }
@@ -472,12 +625,11 @@ function scaffold(dir, answers) {
   mkdirSync(join(target, "src"), { recursive: true });
   copyFileSync(join(TEMPLATE_DIR, "tsconfig.json"), join(target, "tsconfig.json"));
 
-  // The Worker's name is the workers.dev hostname, so it follows the directory
-  // rather than staying "kukuroo" for everyone who ever runs this.
-  const wranglerConfig = readFileSync(join(TEMPLATE_DIR, "wrangler.jsonc"), "utf8").replace(
-    /^(\s*"name":\s*)"[^"]*"/m,
-    `$1"${name}"`,
-  );
+  // The Worker's name is the leftmost label of a workers.dev hostname, so it
+  // follows the directory rather than staying "kukuroo" for everyone who ever runs
+  // this. It is also why the wizard does not ask for a name: `init my-push` has
+  // already answered that.
+  const wranglerConfig = wranglerSource({ name, origin: answers.origin });
   const pkg = readFileSync(join(TEMPLATE_DIR, "package.json"), "utf8")
     .replace(/^(\s*"name":\s*)"[^"]*"/m, `$1"${name}"`)
     .replace(/^(\s*"kukuroo":\s*)"[^"]*"/m, `$1"${spec}"`);
@@ -494,8 +646,13 @@ function scaffold(dir, answers) {
   const row = (file, note = "") => `  wrote ${`${dir}/${file}`.padEnd(column)}${note}`.trimEnd();
   const gutter = " ".repeat(column + 8);
 
+  const originNote =
+    answers.origin.kind === "domain"
+      ? `origin ${answers.origin.hostname}`
+      : `origin ${name}.<subdomain>.workers.dev`;
+
   console.log("");
-  console.log(row("wrangler.jsonc", "the Worker's name and origin"));
+  console.log(row("wrangler.jsonc", originNote));
   console.log(row("src/worker.ts", 'mountKukuroo({ prefix: "/push",'));
   console.log(`${gutter}standalone: ${answers.frontEnd},`);
   console.log(`${gutter}requireInvite: ${answers.requireInvite} })`);
@@ -625,22 +782,62 @@ invite code can be rotated any time with \`npx kukuroo rotate\`, and nothing
 re-enrols.`);
 }
 
-async function standaloneSetup(dir, answers) {
+/**
+ * Deploy, and settle the navigate origin for a workers.dev deployment.
+ *
+ * A custom domain knows its origin before the deploy, so it deploys once. A
+ * workers.dev address is `<worker>.<account-subdomain>.workers.dev` and no
+ * wrangler command reports the account subdomain, so the only way to learn it is
+ * to deploy and read what wrangler printed. Hence two deploys: the first names the
+ * origin, the second is the one that enforces it.
+ *
+ * Returns the origin that ended up live, or null if it could not be determined.
+ */
+function deployStandalone(name, answers) {
+  console.log("\nDeploying.\n");
+  const output = deploy();
+
+  if (answers.origin.kind === "domain") return originUrl(answers.origin);
+
+  const url = workersDevUrlFrom(output);
+  if (url === null) return null;
+
+  console.log(`\nThat origin is ${url}.`);
+  console.log("Writing it into wrangler.jsonc as KUKUROO_NAVIGATE_ORIGIN, then deploying again");
+  console.log("so notification clicks stay inside the installed web app.\n");
+
+  const settled = { kind: "workers-dev", url };
+  writeFileSync(resolve(workDir, "wrangler.jsonc"), wranglerSource({ name, origin: settled }));
+  deploy();
+  return url;
+}
+
+async function standaloneSetup(dir, answers, { shouldDeploy }) {
   const target = scaffold(dir, answers);
   workDir = target;
   npmInstall(dir);
 
   const credentials = await provisionSecrets();
 
-  const steps = [
-    backupNote(`${dir}/kukuroo.credentials.json`),
+  const name = workerName(basename(target));
+  const liveOrigin = shouldDeploy ? deployStandalone(name, answers) : null;
 
-    `Open ${dir}/wrangler.jsonc and pick the origin: your own hostname, or
-   workers.dev. Settle it before anyone enrols. A subscription is bound to the
-   origin it was created on, so once devices are enrolled, changing the origin
-   stops all of them with no error anywhere, and each one has to enrol again by
-   hand. The keys are not the problem and do not change; the origin is.`,
-  ];
+  const steps = [backupNote(`${dir}/kukuroo.credentials.json`)];
+
+  // The deploy happened but wrangler's output did not name the origin, so the one
+  // value that has to be exactly right is still missing. Say so, rather than
+  // leaving an unenforced navigate origin to be discovered when a notification
+  // click drops someone into a browser tab.
+  if (shouldDeploy && liveOrigin === null) {
+    steps.push(
+      `Set KUKUROO_NAVIGATE_ORIGIN in ${dir}/wrangler.jsonc, and deploy again.
+
+   The deploy went through, but its output did not contain a workers.dev URL this
+   script could read, so it did not guess. Use the address wrangler printed above.
+   Until then the navigate origin is not enforced, and a notification pointing off
+   the origin ejects the reader into a browser tab.`,
+    );
+  }
 
   // Without our page, nothing can enrol until the origin serving the operator's
   // own UI is allowed to call subscribe from a browser. That is a step, not a
@@ -656,29 +853,43 @@ async function standaloneSetup(dir, answers) {
     );
   }
 
+  if (!shouldDeploy) {
+    steps.push(`Deploy it.
+
+     cd ${dir}
+     npx wrangler deploy${
+       answers.origin.kind === "workers-dev"
+         ? `
+
+   Then set KUKUROO_NAVIGATE_ORIGIN in wrangler.jsonc to the workers.dev address
+   the deploy prints, and deploy once more. Without it, a notification pointing off
+   the origin ejects the reader into a browser tab.`
+         : ""
+     }`);
+  }
+
   steps.push(
     answers.frontEnd
-      ? `Deploy it, and enrol your phone.
+      ? `Enrol your phone.
 
-     cd ${dir}
-     npx wrangler deploy
-
-   Then, on the phone: open the origin in Safari, Add to Home Screen, open it
-   from the icon, and allow notifications. Enrolling from a Safari tab does not
-   work; that is Apple's rule, not ours.${
+   Open the origin in Safari, Add to Home Screen, open it from the icon, and allow
+   notifications. Enrolling from a Safari tab does not work; that is Apple's rule,
+   not ours.${
      answers.requireInvite ? "\n   The page asks for the invite code, which is at the end of this output." : ""
    }`
-      : `Deploy it.
+      : `Enrol a device from your own page.
 
-     cd ${dir}
-     npx wrangler deploy
-
-   Then enrol a device from your own page. On iOS it has to be added to the
-   Home Screen and opened from the icon first; a Safari tab cannot subscribe.`,
+   On iOS it has to be added to the Home Screen and opened from the icon first; a
+   Safari tab cannot subscribe.`,
   );
 
+  const origin = liveOrigin ?? "https://<your origin>";
   console.log(`
-Done. ${dir} is a deployable Worker, and every secret is installed.
+${
+  shouldDeploy
+    ? `Done, and deployed.${liveOrigin === null ? "" : ` Your origin is ${liveOrigin}.`}`
+    : `Done. ${dir} is a deployable Worker, and every secret is installed.`
+}
 
 ${["One", "Two", "Three", "Four"][steps.length - 1]} things left, in this order.
 
@@ -686,10 +897,10 @@ ${steps.map((step, i) => `${i + 1}. ${step}`).join("\n\n")}
 
 That is setup. From then on, a notification is one request:
 
-     curl -X POST https://<your origin>/push/send \\
+     curl -X POST ${origin}/push/send \\
        -H "authorization: Bearer <the send token, below>" \\
        -H 'content-type: application/json' \\
-       -d '{"notification":{"title":"hello","navigate":"https://<your origin>/"}}'
+       -d '{"notification":{"title":"hello","navigate":"${origin}/"}}'
 
 Everything else, in more detail: ${README_SECTIONS.standalone}`);
 
@@ -699,6 +910,11 @@ Everything else, in more detail: ${README_SECTIONS.standalone}`);
 async function mountedSetup(answers, { dirGiven }) {
   if (dirGiven) {
     console.log("\nIgnoring the directory argument: mounted has no project to create.");
+  }
+  // Both are standalone's business. The host Worker's origin already exists, and
+  // its deploy pipeline is not ours to drive.
+  if (answers.origin !== undefined) {
+    console.log("Ignoring the origin: mounted enrols on your Worker's own origin.");
   }
   console.log(`
 Mounted, then. Your Worker already has an origin, so the routes belong on it and
@@ -756,14 +972,25 @@ Answers:
   --standalone, --mounted       a Worker of its own, or three lines inside one
                                 you already run (default: standalone; implied
                                 by --front-end)
+  --origin <hostname>           enrol devices on a domain you have on Cloudflare
+  --workers-dev                 enrol devices on a workers.dev address (default)
   --invite, --no-invite         require the invite code to enrol (default: no)
   --yes                         take every default, ask nothing
+  --deploy, --no-deploy         deploy a standalone Worker once it is set up
+                                (default: yes with a terminal, no without)
 
 Only the VAPID keypair is permanent; there is no rotate for it.`;
 
 /** Flags anywhere, one optional positional. Unknown flags stop rather than being ignored. */
 function parseInitArgs(argv) {
-  const flags = { frontEnd: undefined, shape: undefined, requireInvite: undefined, yes: false };
+  const flags = {
+    frontEnd: undefined,
+    shape: undefined,
+    requireInvite: undefined,
+    origin: undefined,
+    deploy: undefined,
+    yes: false,
+  };
   let dir;
   const setShape = (value, arg) => {
     if (flags.shape !== undefined && flags.shape !== value) {
@@ -772,8 +999,15 @@ function parseInitArgs(argv) {
     flags.shape = value;
     return arg;
   };
+  const setOrigin = (value) => {
+    if (flags.origin !== undefined) {
+      die(`--origin and --workers-dev contradict each other.\n\n${USAGE}`);
+    }
+    flags.origin = value;
+  };
 
-  for (const arg of argv) {
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
     switch (arg) {
       case "--invite": flags.requireInvite = true; break;
       case "--no-invite": flags.requireInvite = false; break;
@@ -781,6 +1015,20 @@ function parseInitArgs(argv) {
       case "--no-front-end": flags.frontEnd = false; break;
       case "--standalone": setShape("standalone", arg); break;
       case "--mounted": setShape("mounted", arg); break;
+      case "--workers-dev": setOrigin({ kind: "workers-dev", url: null }); break;
+      case "--origin": {
+        const hostname = (argv[i + 1] ?? "").trim().toLowerCase();
+        if (hostname === "" || hostname.startsWith("-")) {
+          die(`--origin needs a hostname, e.g. --origin push.example.com\n\n${USAGE}`);
+        }
+        const complaint = assertHostname(hostname);
+        if (complaint !== null) die(`--origin ${hostname}: ${complaint}.\n\n${USAGE}`);
+        setOrigin({ kind: "domain", hostname });
+        i += 1;
+        break;
+      }
+      case "--deploy": flags.deploy = true; break;
+      case "--no-deploy": flags.deploy = false; break;
       case "--yes": case "-y": flags.yes = true; break;
       default:
         if (arg.startsWith("-")) die(`Unknown option ${JSON.stringify(arg)}.\n\n${USAGE}`);
@@ -802,17 +1050,30 @@ if (argv.includes("--help") || argv.includes("-h")) {
 
 switch (command) {
   case "init": {
-    if (rest.includes("--resume")) { resumeSetup(); break; }
-    if (rest.includes("--secrets")) { await secretsOnly(); break; }
+    if (rest.includes("--resume")) { assertAuthenticated(); resumeSetup(); break; }
+    if (rest.includes("--secrets")) { assertAuthenticated(); await secretsOnly(); break; }
 
     const { dir, flags } = parseInitArgs(rest);
     if (dir !== undefined) assertWritableTarget(dir);
+    // Before the questions, so nobody answers three of them and is then told to
+    // log in. It costs a second and it is the only check here that prevents an
+    // unrecoverable half-finished setup.
+    assertAuthenticated();
+
+    // Deploying to a live Cloudflare account is fine when someone is watching and
+    // chose it. Doing it from a script that could not ask is a surprise, and the
+    // kind that claims a hostname or spends money is the wrong kind, so no
+    // terminal means no deploy unless --deploy says otherwise.
+    const shouldDeploy = flags.deploy ?? Boolean(process.stdin.isTTY);
+
     const answers = await askAnswers(flags);
-    if (answers.shape === "standalone") await standaloneSetup(dir ?? "kukuroo", answers);
-    else await mountedSetup(answers, { dirGiven: dir !== undefined });
+    if (answers.shape === "standalone") {
+      await standaloneSetup(dir ?? "kukuroo", answers, { shouldDeploy });
+    } else await mountedSetup(answers, { dirGiven: dir !== undefined });
     break;
   }
   case "rotate":
+    assertAuthenticated();
     await rotate(rest[0]);
     break;
   default:
