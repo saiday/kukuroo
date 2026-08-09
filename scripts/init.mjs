@@ -45,6 +45,7 @@ import {
   workerSource,
   wranglerSource,
 } from "./template.mjs";
+import { Cancelled, ask, supported, withScreen, wrap } from "./tui.mjs";
 
 // Where the credentials file goes and where wrangler runs. It is the current
 // directory for every command except a scaffolded init, which moves both into
@@ -361,58 +362,18 @@ function resumeSetup() {
 }
 
 // ---------------------------------------------------------------------------
-// The two questions.
+// The questions.
 //
-// Both are printed with what they set, because the answer is a line of
-// TypeScript in a file the operator owns. A wizard that hides the option it
-// wrote leaves them unable to change their mind without asking us.
+// Every one of them is defined once, here, and both askers render from the same
+// entry: the full-screen one and the line-by-line fallback for a terminal that
+// cannot be taken over. Two copies of this prose would drift, and the copy is
+// the part that matters, because each answer becomes a line of TypeScript in a
+// file the operator owns and has to be able to change their mind about.
 
-async function confirm(rl, question, defaultYes) {
-  const suffix = defaultYes ? "[Y/n]" : "[y/N]";
-  for (;;) {
-    let answer;
-    try {
-      answer = (await rl.question(`${question} ${suffix} `)).trim().toLowerCase();
-    } catch {
-      // Ctrl+D, or a pipe that ended. Nothing has been created at this point,
-      // so leaving is free; a stack trace would only suggest otherwise.
-      console.log("");
-      die("Cancelled. Nothing was created and no key was generated.");
-    }
-    if (answer === "") return defaultYes;
-    if (answer === "y" || answer === "yes") return true;
-    if (answer === "n" || answer === "no") return false;
-    console.log("  y or n.");
-  }
-}
-
-/** The shape question. Two answers, so not a yes/no, so not `confirm`. */
-async function chooseShape(rl) {
-  for (;;) {
-    let answer;
-    try {
-      answer = (await rl.question("Its own Worker, or mounted into yours? [1/2] "))
-        .trim()
-        .toLowerCase();
-    } catch {
-      console.log("");
-      die("Cancelled. Nothing was created and no key was generated.");
-    }
-    if (answer === "1" || answer === "own" || answer === "standalone") return "standalone";
-    if (answer === "2" || answer === "mounted" || answer === "mount") return "mounted";
-    console.log("  1 or 2.");
-  }
-}
-
-/**
- * Where devices will enrol. Standalone only: a mounted deployment's origin is its
- * host Worker's, which is already decided and not ours to ask about.
- *
- * A hostname, not a URL, because the answer goes into a wrangler route pattern,
- * which takes neither a scheme nor a path. Taking "https://push.example.com/" and
- * quietly trimming it would be friendlier right up until the deploy failed with
- * something about an invalid route.
- */
+/** A hostname, not a URL: the answer goes into a wrangler route pattern, which
+ * takes neither a scheme nor a path. Trimming "https://push.example.com/" down
+ * quietly would be friendlier right up until the deploy failed with something
+ * about an invalid route. */
 function assertHostname(answer) {
   if (/^https?:\/\//i.test(answer)) return "just the hostname, with no https:// in front";
   if (answer.includes("/")) return "just the hostname, with no path";
@@ -421,91 +382,241 @@ function assertHostname(answer) {
   return null;
 }
 
-async function chooseOrigin(rl) {
-  for (;;) {
-    let answer;
-    try {
-      answer = (await rl.question("Where will devices enrol? [1/2] ")).trim().toLowerCase();
-    } catch {
-      console.log("");
-      die("Cancelled. Nothing was created and no key was generated.");
-    }
-    if (answer === "" || answer === "1" || answer === "workers.dev" || answer === "workers-dev") {
-      return { kind: "workers-dev", url: null };
-    }
-    if (answer === "2" || answer === "domain") {
-      for (;;) {
-        let hostname;
-        try {
-          hostname = (await rl.question("  Hostname, e.g. push.example.com: ")).trim().toLowerCase();
-        } catch {
-          console.log("");
-          die("Cancelled. Nothing was created and no key was generated.");
-        }
-        const complaint = assertHostname(hostname);
-        if (complaint === null) return { kind: "domain", hostname };
-        console.log(`  ${complaint}.`);
-      }
-    }
-    console.log("  1 or 2.");
-  }
-}
+const WORKERS_DEV = { kind: "workers-dev", url: null };
 
-const ORIGIN = {
-  default: { kind: "workers-dev", url: null },
-  intro: `  Where will devices enrol?
+const QUESTIONS = {
+  frontEnd: {
+    question: "Use the bundled front end?",
+    body:
+      "It generates the page a phone opens in Safari, adds to the Home Screen, and " +
+      "enrols from. One file, no build step. Sets `standalone` on mountKukuroo().",
+    choices: [
+      {
+        label: "Yes, serve the bundled page",
+        hint: "The out-of-box setup. Nothing to build.",
+        value: true,
+      },
+      {
+        label: "No, I will build my own UI",
+        hint: `Against the API: ${README_SECTIONS.api}`,
+        value: false,
+      },
+    ],
+    default: 0,
+    summary: (v) => (v ? "bundled front end" : "no bundled front end"),
+  },
 
-  This is the one answer worth getting right first. Moving it later does not stop
-  delivery to devices already enrolled, but it does mean you can no longer read or
-  repair their subscriptions, so every device enrols again by hand.
+  shape: {
+    question: "Where do the push routes live?",
+    body: "Nothing is scaffolded for a mounted deployment: it is three lines inside a fetch handler you already have.",
+    choices: [
+      {
+        label: "Its own Worker, at its own address",
+        hint: "This script writes the project and deploys it.",
+        value: "standalone",
+      },
+      {
+        label: "Mounted into a Worker I already run",
+        hint:
+          "The routes sit on your site's origin, so a notification click lands back inside your site.",
+        value: "mounted",
+      },
+    ],
+    default: 0,
+    summary: (v) => v,
+  },
 
-  1) A workers.dev address. Cloudflare provides it, free, and it is stable as long
-     as this Worker keeps its name.
-  2) A domain I already have on Cloudflare. The deploy provisions the DNS record
-     and the certificate.`,
+  origin: {
+    question: "Where will devices enrol?",
+    body:
+      "This is the one answer worth getting right first. Moving it later does not stop " +
+      "delivery to devices already enrolled, but it does mean you can no longer read or " +
+      "repair their subscriptions, so every device enrols again by hand.",
+    choices: [
+      {
+        label: "A workers.dev address",
+        hint:
+          "Cloudflare provides it, free, and it is stable as long as this Worker keeps its name.",
+        value: WORKERS_DEV,
+      },
+      {
+        label: "A domain I already have on Cloudflare",
+        hint: "The deploy provisions the DNS record and the certificate.",
+        value: "ask-hostname",
+      },
+    ],
+    default: 0,
+    summary: (v) => (v.kind === "domain" ? v.hostname : "workers.dev"),
+  },
+
+  requireInvite: {
+    question: "Require an invite code to enrol a device?",
+    body:
+      "The code is generated either way, so changing your mind later is one word and a " +
+      "deploy, and nothing re-enrols. Sets `requireInvite` on mountKukuroo().",
+    choices: [
+      {
+        label: "No, notifications are for whoever turns up",
+        hint: "Anyone who reaches the URL can enrol a device.",
+        value: false,
+      },
+      {
+        label: "Yes, this is for my own devices",
+        hint: "Stops a stranger who finds your URL from receiving everything you send.",
+        value: true,
+      },
+    ],
+    default: 0,
+    summary: (v) => (v ? "invite required" : "open enrolment"),
+  },
 };
 
-const FRONT_END = {
-  prompt: "Use the bundled front end?",
-  default: true,
-  intro: `  Generates the page a phone opens in Safari, adds to the Home Screen, and
-  enrols from. One file, no build step.
-
-  yes  the out-of-box setup. Nothing to build.
-  no   you build your own UI against the API: ${README_SECTIONS.api}
-
-  Sets \`standalone\` on mountKukuroo().`,
-};
-
-const SHAPE = {
-  intro: `  Then where do the push routes live?
-
-  1) Its own Worker, at its own address. This script writes the project; you
-     deploy it and point your UI at it.
-  2) Mounted into a Worker you already run: three lines inside your own fetch
-     handler, so the routes sit on your site's origin and a tap lands back
-     inside your site. Nothing is scaffolded.`,
-  default: "standalone",
-};
-
-const INVITE = {
-  prompt: "Require an invite code to enrol a device?",
-  default: false,
-  intro: `  Stops a stranger who finds your URL from enrolling their own device and
-  receiving everything you send.
-
-  yes  this deployment is for your own devices.
-  no   the notifications are for whoever turns up.
-
-  Sets \`requireInvite\` on mountKukuroo(). The code is generated either way, so
-  changing your mind later is one word and a deploy, and nothing re-enrols.`,
+/** The follow-up when the origin answer is a domain. */
+const HOSTNAME = {
+  question: "Which hostname?",
+  body:
+    "It has to be a zone already on Cloudflare in this account, with no existing CNAME " +
+    "record on that name. Just the hostname: no scheme, no path, no port.",
+  placeholder: "push.example.com",
+  validate: assertHostname,
 };
 
 /**
- * Answers from flags, from the prompts, or from the defaults if nobody is
+ * Fill in whatever the previous answers settle, then report what is still open.
+ *
+ * It does mutate: saying yes to the bundled page settles the shape, because that
+ * page is served by a Worker of its own, and a question whose answer is already
+ * determined is not a question. `--mounted` can still override it, which is why
+ * this only ever fills a blank.
+ */
+function nextQuestion(answers) {
+  if (answers.shape === undefined && answers.frontEnd === true) answers.shape = "standalone";
+
+  if (answers.frontEnd === undefined) return "frontEnd";
+  if (answers.shape === undefined) return "shape";
+  // Standalone only. A mounted deployment enrols on its host Worker's origin,
+  // which exists already and is not a question we get to ask.
+  if (answers.shape === "standalone" && answers.origin === undefined) return "origin";
+  if (answers.requireInvite === undefined) return "requireInvite";
+  return null;
+}
+
+/**
+ * How many questions this run will ask in total, counting the ones already done.
+ *
+ * Simulated forward with the defaults, because the plan genuinely is not fixed:
+ * declining the bundled front end unlocks the shape question. So this can go from
+ * three to four the moment that answer arrives, and showing four up front would be
+ * wrong for almost everybody who takes the default.
+ */
+function totalQuestions(answers, answered) {
+  const probe = { ...answers };
+  const settled = { frontEnd: true, shape: "standalone", origin: WORKERS_DEV, requireInvite: false };
+  let total = answered;
+  for (let key = nextQuestion(probe); key !== null; key = nextQuestion(probe)) {
+    probe[key] = settled[key];
+    total++;
+  }
+  return total;
+}
+
+/** The questions, full-screen, one at a time. */
+async function askOnScreen(answers) {
+  let asked = 0;
+  return withScreen(async () => {
+    for (let key = nextQuestion(answers); key !== null; key = nextQuestion(answers)) {
+      const spec = QUESTIONS[key];
+      // `asked` counts the ones already answered, so the question on screen is the
+      // next one and the total is what remains on top of it. Counting the current
+      // question as answered would have it counted twice, once in each term.
+      const position = { step: asked + 1, total: totalQuestions(answers, asked) };
+      asked += 1;
+      let value = await ask({ ...spec, ...position });
+
+      if (value === "ask-hostname") {
+        const hostname = await ask({
+          ...HOSTNAME,
+          ...position,
+          value: "",
+          validate: HOSTNAME.validate,
+        });
+        value = { kind: "domain", hostname: hostname.toLowerCase() };
+      }
+
+      answers[key] = value;
+    }
+    return answers;
+  });
+}
+
+/**
+ * The same questions down a terminal that cannot be taken over: stdout redirected
+ * to a file, an editor's dumb shell, a CI job with a TTY on stdin only.
+ */
+async function askOnLines(answers) {
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  const read = async (prompt) => {
+    try {
+      return (await rl.question(prompt)).trim();
+    } catch {
+      // Ctrl+D, or a pipe that ended. Nothing has been created at this point, so
+      // leaving is free; a stack trace would only suggest otherwise.
+      console.log("");
+      die("Cancelled. Nothing was created and no key was generated.");
+    }
+  };
+
+  try {
+    for (let key = nextQuestion(answers); key !== null; key = nextQuestion(answers)) {
+      const spec = QUESTIONS[key];
+      console.log("");
+      for (const line of wrap(spec.body, 76)) console.log(`  ${line}`);
+      console.log("");
+      spec.choices.forEach((choice, i) => {
+        console.log(`  ${i + 1}) ${choice.label}`);
+        for (const line of wrap(choice.hint, 72)) console.log(`     ${line}`);
+      });
+      console.log("");
+
+      let value;
+      for (;;) {
+        const answer = await read(`${spec.question} [1-${spec.choices.length}] `);
+        if (answer === "") {
+          value = spec.choices[spec.default].value;
+          break;
+        }
+        const picked = Number(answer);
+        if (Number.isInteger(picked) && picked >= 1 && picked <= spec.choices.length) {
+          value = spec.choices[picked - 1].value;
+          break;
+        }
+        console.log(`  1 to ${spec.choices.length}.`);
+      }
+
+      if (value === "ask-hostname") {
+        for (;;) {
+          const hostname = (await read(`  Hostname, e.g. ${HOSTNAME.placeholder}: `)).toLowerCase();
+          const complaint = assertHostname(hostname);
+          if (complaint === null) {
+            value = { kind: "domain", hostname };
+            break;
+          }
+          console.log(`  ${complaint}.`);
+        }
+      }
+
+      answers[key] = value;
+    }
+  } finally {
+    rl.close();
+  }
+  return answers;
+}
+
+/**
+ * Answers from flags, from the questions, or from the defaults if nobody is
  * watching. Anything already given on the command line is never asked about,
- * which is what makes the flag form and the wizard the same flow rather than
- * two.
+ * which is what makes the flag form and the wizard the same flow rather than two.
  */
 async function askAnswers(flags) {
   const answers = {
@@ -514,67 +625,37 @@ async function askAnswers(flags) {
     requireInvite: flags.requireInvite,
     origin: flags.origin,
   };
-  const interactive = process.stdin.isTTY && !flags.yes;
-  const rl = interactive ? createInterface({ input: process.stdin, output: process.stdout }) : null;
-  const fallback = (label, value) => {
-    console.log(`  ${label} ${value === true ? "yes" : value === false ? "no" : value} (default)`);
-    return value;
-  };
 
-  try {
-    if (interactive && Object.values(answers).some((v) => v === undefined)) {
-      console.log("\nA few questions. Every answer is an option you can change later.\n");
+  if (!process.stdin.isTTY || flags.yes) {
+    for (let key = nextQuestion(answers); key !== null; key = nextQuestion(answers)) {
+      answers[key] = QUESTIONS[key].choices[QUESTIONS[key].default].value;
+      console.log(`  ${QUESTIONS[key].summary(answers[key])} (default)`);
     }
-
-    if (answers.frontEnd === undefined) {
-      if (!interactive) answers.frontEnd = fallback(FRONT_END.prompt, FRONT_END.default);
-      else {
-        console.log(FRONT_END.intro + "\n");
-        answers.frontEnd = await confirm(rl, FRONT_END.prompt, FRONT_END.default);
-        console.log("");
-      }
-    }
-
-    // With our page, the shape is settled: it is served by a Worker of its own.
-    // Someone who wants the bundled page inside a Worker they already run can
-    // still say so with --mounted, which is why this only fills a blank.
-    if (answers.shape === undefined && answers.frontEnd) answers.shape = "standalone";
-
-    if (answers.shape === undefined) {
-      if (!interactive) answers.shape = fallback("Its own Worker, or mounted?", SHAPE.default);
-      else {
-        console.log(SHAPE.intro + "\n");
-        answers.shape = await chooseShape(rl);
-        console.log("");
-      }
-    }
-
-    // Standalone only. A mounted deployment enrols on its host Worker's origin,
-    // which exists already and is not a question we get to ask.
-    if (answers.shape === "standalone" && answers.origin === undefined) {
-      if (!interactive) {
-        console.log("  Where will devices enrol? workers.dev (default)");
-        answers.origin = ORIGIN.default;
-      } else {
-        console.log(ORIGIN.intro + "\n");
-        answers.origin = await chooseOrigin(rl);
-        console.log("");
-      }
-    }
-
-    if (answers.requireInvite === undefined) {
-      if (!interactive) answers.requireInvite = fallback(INVITE.prompt, INVITE.default);
-      else {
-        console.log(INVITE.intro + "\n");
-        answers.requireInvite = await confirm(rl, INVITE.prompt, INVITE.default);
-        console.log("");
-      }
-    }
-  } finally {
-    rl?.close();
+    return answers;
   }
 
-  return answers;
+  let asked;
+  try {
+    asked = supported() ? await askOnScreen(answers) : await askOnLines(answers);
+  } catch (error) {
+    // Ctrl+C during the questions. The screen has already been given back by
+    // withScreen's finally, so this only has to say why the run stopped.
+    if (error instanceof Cancelled) {
+      die("Cancelled. Nothing was created and no key was generated.");
+    }
+    throw error;
+  }
+
+  // The full-screen session takes its screen back on the way out, so the answers
+  // are reprinted here, on the scrollback that survives. They are the shape of the
+  // deployment, and the operator is about to read a summary that assumes them.
+  console.log("\nAnswers:\n");
+  for (const key of ["frontEnd", "shape", "origin", "requireInvite"]) {
+    if (asked[key] === undefined) continue;
+    console.log(`  ${QUESTIONS[key].summary(asked[key])}`);
+  }
+
+  return asked;
 }
 
 // ---------------------------------------------------------------------------
