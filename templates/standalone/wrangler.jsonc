@@ -5,66 +5,42 @@
   "compatibility_date": "2026-03-17",
 
   // ---------------------------------------------------------------------------
-  // The origin, and why there is only one of it.
+  // The origin devices enrol on, answered during `kukuroo init`.
   //
-  // A push subscription is bound to an origin. Change the origin and every
-  // subscription stops working, silently, with no error anywhere and no way to
-  // re-point them. So this decision is made once, before any device enrols.
+  // Moving it later does not stop delivery to devices already enrolled, because
+  // the push service never sees this hostname. What it costs is your own side of
+  // it: a page on a different origin cannot read or repair subscriptions created
+  // on the old one, so you can neither re-subscribe nor verify them, and a
+  // notification click navigates to an address you no longer serve. Which is why
+  // the wizard asks before it deploys, rather than leaving it to be discovered.
   //
   // `preview_urls: false` is the one that catches people. A preview URL is a
-  // real, working, enrollable origin, and it is per-version, so a subscription
+  // real, working, enrollable origin, and it is *per version*, so a subscription
   // created against one during a five-minute test appears to work and then never
-  // delivers again. Leave this false.
-  //
-  // `workers_dev` is a softer call. A <name>.<subdomain>.workers.dev address is
-  // stable indefinitely, so it is a legitimate origin if you do not have a
-  // domain. See the two options below; pick one and delete the other.
+  // delivers again. Leave it false.
   // ---------------------------------------------------------------------------
   "preview_urls": false,
 
-  // Option A, recommended: your own hostname. The zone must already be on
-  // Cloudflare. `wrangler deploy` provisions the DNS record and the certificate.
+  // Your own hostname. The zone is already on Cloudflare, so `wrangler deploy`
+  // provisions the DNS record and the certificate itself.
   "workers_dev": false,
   "routes": [{ "pattern": "push.example.com", "custom_domain": true }],
-
-  // Option B: no domain. Delete the two lines above and uncomment this one.
-  //
-  // Then never rename this Worker and never change your account subdomain, since
-  // either one moves the origin and unenrols every device.
-  //
-  // "workers_dev": true,
-
-  // Option C: a path on a website you already have, e.g. www.example.com/push/*.
-  // The site itself can be hosted anywhere; what matters is that the hostname's
-  // DNS is proxied through Cloudflare, so the Worker answers /push/* before your
-  // origin server ever sees it. Replace Option A's route with:
-  //
-  // "workers_dev": false,
-  // "routes": [{ "pattern": "www.example.com/push/*", "zone_name": "example.com" }],
-  //
-  // Devices then enrol at your site's own origin, which is where notification
-  // clicks should land anyway. See the origins table under "Mounted" in the
-  // README.
 
   // Subscriptions. The binding name is not configurable; Kukuroo looks for
   // exactly this. Leaving out "id" lets wrangler create the namespace on the
   // first deploy.
   "kv_namespaces": [{ "binding": "KUKUROO_SUBS" }],
 
-  // Every notification's `navigate` must be on this origin. Set it to the same
-  // hostname you chose above.
-  //
-  // Serving enrolment and push from one origin is what keeps a tap inside the
-  // installed web app, but that only makes same-origin *likely*: without this,
-  // the guarantee rests on every future caller remembering, and a `navigate`
-  // that leaves the origin drops the user out into a browser tab. It does not
-  // restrict `icon`, which legitimately points at a CDN.
   "vars": {
+    // Every notification's `navigate` must be on this origin. Serving enrolment
+    // and push from one origin is what keeps a notification click inside the
+    // installed web app, but that only makes same-origin *likely*: without this,
+    // the guarantee rests on every future caller remembering. It does not
+    // restrict `icon`, which legitimately points at a CDN.
     "KUKUROO_NAVIGATE_ORIGIN": "https://push.example.com"
 
-    // If pages on another origin call subscribe and public-key from the
-    // browser (README: the origins table under "Mounted", last row), list
-    // their exact origins:
+    // If pages on another origin call subscribe and public-key from the browser,
+    // list their exact origins. There is no wildcard:
     //
     // ,"KUKUROO_ALLOWED_ORIGINS": "https://www.example.com"
   }
