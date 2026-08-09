@@ -14,31 +14,30 @@ notification that actually arrived. Every project on this machine reads that one
 ## 1. Find what is already there
 
 ```sh
-ls -l "${XDG_CONFIG_HOME:-$HOME/.config}/kukuroo/env" 2>/dev/null; ls -l kukuroo.credentials.json 2>/dev/null
+cat "${XDG_CONFIG_HOME:-$HOME/.config}/kukuroo/env" 2>/dev/null
 ```
 
-- The env file exists: read `KUKUROO_ORIGIN` from it and go to step 3 to re-verify. Report the origin,
-  never the token.
-- `kukuroo.credentials.json` is here: this is the user's push project. Take `origin` and `sendToken`
-  from it. When `origin` is absent, the deployment predates that field, so ask for it or take it from
-  `wrangler.jsonc` (`routes[].pattern`, or `vars.KUKUROO_NAVIGATE_ORIGIN`).
-- Neither: step 2.
+That file, or `KUKUROO_ORIGIN` and `KUKUROO_SEND_TOKEN` already in the environment, is the only place
+either value lives on this machine. Kukuroo is deployed on one machine and sent to from others, so
+being on a machine that has never been wired up is the normal case and not a sign anything is wrong.
 
 `$ARGUMENTS`, if given, is the origin. Accept it with or without a scheme and normalise to
 `https://<host>` with no trailing slash.
 
 ## 2. Ask for what is missing
 
-The origin is public, so ask for it in the conversation. The send token is a credential, so offer the
-choice and name the difference:
+One message, both values:
 
-> Run this yourself and the token stays out of this transcript — in Claude Code, `!` runs a command
-> here:
-> `!kukuroo agent-env --origin https://push.example.com`
-> Or paste the token and I'll store it, which does put it in the transcript.
+> Which origin does your Kukuroo Worker answer on, and what is its send token? Pasting the token puts
+> it in this transcript; if you would rather it did not, put both in `~/.config/kukuroo/env` yourself
+> (`KUKUROO_ORIGIN=` and `KUKUROO_SEND_TOKEN=`, a line each) and say when it is done.
 
-If the user has not deployed a Worker yet, `npx kukuroo init my-push` is the whole of setup; say that
-once and stop rather than walking them through it here.
+Both are in `kukuroo.credentials.json` on the machine the deployment was set up from: `sendToken`, and
+the address is the custom domain in its `wrangler.jsonc` or the `workers.dev` URL the deploy printed.
+Say that once if they do not have the values to hand.
+
+If they have not deployed a Worker at all yet, `npx kukuroo init my-push` is the whole of setup. Say
+that and stop, rather than walking them through it here.
 
 ## 3. Prove it, then store it
 
@@ -72,5 +71,6 @@ Read the response rather than the exit code:
 - `"delivered":0` — the request was fine and no device is enrolled. Nothing gets stored. The fix is
   enrolment, not config: open the origin in Safari on the phone, Add to Home Screen, open it **from
   the icon**, and allow notifications. A Safari tab cannot subscribe on iOS.
-- `401` — the token is wrong or has been rotated. `kukuroo rotate send-token` prints a new one.
+- `401` — the token is wrong, or has been rotated on the machine that holds the credentials file.
+  Nothing gets stored; ask for the current one.
 - Connection refused or a 404 HTML page — the origin is wrong, or the Worker is not deployed there.

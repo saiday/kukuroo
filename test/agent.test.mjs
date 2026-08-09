@@ -12,11 +12,12 @@
 // test rather than a notification that never arrives. This is scaffold.test.mjs's
 // trick pointed at documentation.
 //
-// The env file: it holds a send token, so its mode is a real assertion, and it
-// must not grow a copy of the VAPID private key. `agent-env` runs as a
-// subprocess, because init.mjs dispatches on import and cannot be imported.
+// The documented shell: setting an agent up is two shell blocks in SKILL.md and
+// nothing else, so no code path in this package exercises them. They are pulled
+// off disk and run, because a quoting mistake in a document is a mistake nothing
+// else in this repository can notice.
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -158,84 +159,69 @@ for (const json of documented) {
   }
 }
 
-// --- agent-env -------------------------------------------------------------
+// --- The documented setup, run as written -----------------------------------
+
+// Setting an agent up is now two shell blocks and a question. Nothing in this
+// package runs those blocks, so they are extracted and run here: `umask 077`
+// carrying through to both the directory and the file, and the sourcing line
+// round-tripping what the writing line wrote.
+
+/** The fenced sh block containing `needle`. */
+function shellBlock(source, needle) {
+  for (const [, body] of source.matchAll(/```sh\n([\s\S]*?)```/g)) {
+    if (body.includes(needle)) return body;
+  }
+  return null;
+}
+
+const writeBlock = shellBlock(skillSource, "printf 'KUKUROO_ORIGIN=");
+ok("the skill documents how to write the env file", writeBlock !== null);
 
 const sandbox = mkdtempSync(join(tmpdir(), "kukuroo-agent-"));
-const project = join(sandbox, "project");
 const config = join(sandbox, "config");
-mkdirSync(project);
 
-const fixture = {
-  createdAt: "2026-01-01T00:00:00.000Z",
-  vapidPublicKey: "PUBLIC-KEY-FIXTURE",
-  vapidPrivateKey: '{"kty":"EC","crv":"P-256","d":"PRIVATE-KEY-FIXTURE"}',
-  sendToken: "send-token-fixture",
-  inviteCode: "bcdfghjkmn",
-  origin: "https://push.example.com",
-};
-writeFileSync(join(project, "kukuroo.credentials.json"), JSON.stringify(fixture, null, 2));
-
-const agentEnv = (args, options = {}) =>
-  execFileSync(process.execPath, [join(root, "scripts/init.mjs"), "agent-env", ...args], {
-    cwd: options.cwd ?? project,
-    env: { ...process.env, XDG_CONFIG_HOME: options.config ?? config },
+const bash = (script, env) =>
+  execFileSync("/bin/bash", ["-c", script], {
     encoding: "utf8",
-    input: options.input,
-    // Explicit, so the refusal cases' `die` output is captured rather than
-    // forwarded to this process's stderr and read as test failure.
+    env: { ...process.env, ...env },
     stdio: ["pipe", "pipe", "pipe"],
   });
 
-const summary = agentEnv([]);
+bash(writeBlock, {
+  XDG_CONFIG_HOME: config,
+  KUKUROO_ORIGIN: "https://push.example.com",
+  KUKUROO_SEND_TOKEN: "send-token-fixture",
+});
+
 const envPath = join(config, "kukuroo", "env");
 const envFile = readFileSync(envPath, "utf8");
 
-ok("agent-env writes the env file", existsSync(envPath));
+ok("the documented block writes the env file", existsSync(envPath));
+// It holds a send token, so the mode is a real assertion rather than tidiness.
 ok("it is 0600", (statSync(envPath).mode & 0o777) === 0o600);
 ok("its directory is 0700", (statSync(join(config, "kukuroo")).mode & 0o777) === 0o700);
 ok("it carries the origin", envFile.includes("KUKUROO_ORIGIN=https://push.example.com\n"));
 ok("it carries the send token", envFile.includes("KUKUROO_SEND_TOKEN=send-token-fixture\n"));
-
-// Sending needs a bearer token and nothing else. A second copy of a key that can
-// never be rotated is only a second thing to lose.
-ok("it carries no VAPID key", !/PRIVATE-KEY-FIXTURE|PUBLIC-KEY-FIXTURE|VAPID/.test(envFile));
 ok("it holds those two lines and nothing else", envFile.trimEnd().split("\n").length === 2);
 
-// The summary is read on a terminal and often pasted into an issue.
-ok("the summary reports the origin", summary.includes("https://push.example.com"));
-ok("the summary does not print the token", !summary.includes("send-token-fixture"));
+// The send commands source that file instead of naming the token, which is the
+// only reason the token never reaches a transcript. So the sourcing line has to
+// work on the file the writing line produces.
+const sourceLine = /^set -a;.*set \+a$/m.exec(skillSource)?.[0];
+ok("the skill documents sourcing it", sourceLine !== undefined);
 
-// A hostname and a trailing slash are both spellings people arrive with, and the
-// value is about to be concatenated with /push/send.
-const config2 = join(sandbox, "config2");
-agentEnv(["--origin", "push.example.com/", "--token-stdin"], {
-  cwd: sandbox,
-  config: config2,
-  input: "piped-token\n",
+const sourced = bash(`${sourceLine}\nprintf '%s|%s' "$KUKUROO_ORIGIN" "$KUKUROO_SEND_TOKEN"`, {
+  XDG_CONFIG_HOME: config,
 });
-const env2 = readFileSync(join(config2, "kukuroo", "env"), "utf8");
-ok("a bare hostname becomes an origin", env2.includes("KUKUROO_ORIGIN=https://push.example.com\n"));
-ok("a trailing slash is dropped", !env2.includes("push.example.com/\n"));
-ok("--token-stdin is trimmed", env2.includes("KUKUROO_SEND_TOKEN=piped-token\n"));
+ok("sourcing it loads both values", sourced === "https://push.example.com|send-token-fixture");
 
-const refuses = (label, args, options) => {
-  try {
-    agentEnv(args, options);
-    ok(label, false);
-  } catch (error) {
-    ok(label, error.status === 1);
-  }
-};
-
-refuses("it refuses without an origin it can find", [], {
-  cwd: sandbox,
-  config: join(sandbox, "config3"),
-});
-refuses("it refuses a token it cannot find", ["--origin", "push.example.com"], {
-  cwd: sandbox,
-  config: join(sandbox, "config4"),
-});
-refuses("it refuses an unknown flag", ["--nope"], { config: join(sandbox, "config5") });
-refuses("it refuses an origin that is not one", ["--origin", "not a host"], {
-  config: join(sandbox, "config6"),
-});
+// The machine that sends is not the machine that deployed. So the two documents
+// an agent acts on directly must not resolve config from setup leftovers:
+// kukuroo.credentials.json and wrangler.jsonc are on somebody else's disk, and a
+// lookup that reads them is a lookup that finds nothing while looking thorough.
+for (const path of ["skills/kukuroo-notify/SKILL.md", "rules/kukuroo.mdc"]) {
+  ok(
+    `${path} does not send the agent looking for the deployment's own files`,
+    !/kukuroo\.credentials\.json|wrangler\.jsonc/.test(read(path)),
+  );
+}

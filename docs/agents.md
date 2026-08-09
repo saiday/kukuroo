@@ -4,45 +4,49 @@ A Kukuroo deployment is one authenticated POST away from your phone, which makes
 natural thing for a coding agent to hold: you step away, and the work tells you when it is
 done. Two problems stand between those two facts, and this is how each is answered.
 
-**The agent does not know where to send.** It is working in some other repository, so
-neither `kukuroo.credentials.json` nor `wrangler.jsonc` is anywhere it can see. And until
-recently the address of a `workers.dev` deployment was printed once, after the deploy, and
-recorded nowhere at all.
+**The agent does not know where to send, and cannot work it out.** It is in some other
+repository, on some other machine. The machine that sends notifications is not the machine
+Kukuroo was deployed from: `kukuroo.credentials.json` and `wrangler.jsonc` are wherever the
+setup happened, which may be a different laptop, a work machine, or a CI runner nobody sits
+at. So there is no breadcrumb to follow here, and a design that searched for one would be
+searching for a file that is not on this disk. The address has exactly one source, and it is
+the person who deployed it.
 
-**The agent should not hold the token.** Reading a send token out of a file and pasting it
-into a shell command puts it in the transcript, in that transcript's backups, and in shell
-history. A credential that has been copied to four places has been rotated to none of them.
+**The agent should not hold the token loosely.** Reading a send token out of a file and
+pasting it into a shell command puts it in the transcript, in that transcript's backups, and
+in shell history. A credential that has been copied to four places has been rotated to none
+of them.
 
 ## Where to send
 
-```sh
-npx kukuroo agent-env --origin push.example.com
-```
+It asks, once, and remembers the answer. Two values, in one question, the first time the
+skill fires on a machine: the origin the Worker answers on, and the send token. Both are on
+the machine that ran `init`, in `kukuroo.credentials.json` and in `wrangler.jsonc`, and
+neither is anywhere the agent can reach.
 
-That writes two lines to `$XDG_CONFIG_HOME/kukuroo/env` (`~/.config/kukuroo/env` by
-default) at mode 0600, in a directory at 0700:
+The answer is cached in `$XDG_CONFIG_HOME/kukuroo/env` (`~/.config/kukuroo/env` by default)
+at mode 0600, in a directory at 0700:
 
 ```
 KUKUROO_ORIGIN=https://push.example.com
 KUKUROO_SEND_TOKEN=...
 ```
 
-- **`init` writes it for you**, as soon as it knows the origin. It also records the origin
-  in `kukuroo.credentials.json` now, so `agent-env` can be re-run later with no arguments.
-  When a `workers.dev` deploy's output does not name a URL the field stays absent rather
-  than guessed, and `--origin` is how you supply it.
-- **`rotate send-token` updates it**, if it exists. Without that, rotating leaves every
-  agent on the machine holding a token that 401s, and the failure surfaces hours later as a
-  notification that never came.
+- **It is written only after a notification has arrived**, never on being told. The answers
+  are held for the length of the turn, the warm-up goes out, and the file appears once the
+  response says `delivered` above zero. A wrong token therefore never reaches disk, and a
+  stored config is a config that has been proved.
+- **It lives in the config directory rather than the project**, because an agent told "ping
+  me when this finishes" is almost never standing in a Kukuroo project. One file per machine
+  means the question is asked once there, not once per repository.
 - **It holds no VAPID key.** Sending needs a bearer token; a second copy of a key that can
   never be rotated is only a second thing to lose.
-- **`--token-stdin`** reads the token from stdin rather than the credentials file, for a
-  machine that has no copy of it:
-  ```sh
-  pbpaste | npx kukuroo agent-env --origin push.example.com --token-stdin
-  ```
-  Never as an argument. An argument is visible in `ps` for the life of the process and
-  lands in shell history afterwards.
+- **A rotation elsewhere shows up here as a 401**, since nothing syncs between machines and
+  nothing pretends to. The skill treats that as the same missing-value case: it asks for the
+  current token and overwrites the file.
+- **Nothing in `kukuroo init` writes it.** Sending from a phone-notification skill is a
+  nice-to-have on top of a push service, and it does not get to add steps, flags, or files to
+  everybody's setup to make its own life easier.
 
 Being shell-sourceable is the whole design. The agent writes `$KUKUROO_SEND_TOKEN` and
 never learns its value:
@@ -85,6 +89,14 @@ That narrowness is doing two jobs. A push arrives on a lock screen wherever you 
 be, so it is yours to ask for. And a skill that fires on a judgement call fires
 inconsistently, which is worse than one that never fires at all: you cannot rely on it and
 you cannot predict it.
+
+### The setup question is one question
+
+Asking has a cost: it lands in the middle of whatever you were doing, and you asked for a
+notification, not an errand. So it is one message, both values at once, and it is asked only
+when the answer is genuinely not on the machine. If you do not answer it, or say not now, the
+skill drops Kukuroo and gets on with the work. It does not ask twice, and it does not turn a
+side request into a setup wizard.
 
 ### It warms the channel up before promising anything
 
@@ -147,7 +159,7 @@ path. The [API section of the README](../README.md#api) is the same contract for
 | What you see | What it is |
 |---|---|
 | `"delivered":0` | Nothing enrolled. Open the origin in Safari on the phone, Add to Home Screen, open it **from the icon**, allow notifications. A Safari tab cannot subscribe on iOS. |
-| `401 unauthorized` | The token is stale. `npx kukuroo rotate send-token`, which updates the env file too. |
+| `401 unauthorized` | The cached token is stale, usually rotated on the machine holding the credentials file. The agent asks for the current one and overwrites the cache. |
 | `delivered` is 1 and no banner | Almost always Chrome, Firefox, or Android, none of which can receive these. Otherwise check that the icon still exists on the Home Screen. |
 | The agent never offers | The skill did not trigger. Say "on my phone" or "via Kukuroo" and it will; `/kukuroo-setup` also confirms the plugin is installed and the endpoint reachable. |
 | A 404 HTML page | Wrong origin, or the Worker is not deployed there. |

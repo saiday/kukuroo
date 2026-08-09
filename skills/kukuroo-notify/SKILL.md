@@ -30,32 +30,33 @@ Send when the user asks for it:
 A push arrives on a lock screen wherever the user happens to be, so it is theirs to ask for. Work
 they are sitting there watching is already visible to them, and needs no notification.
 
-## 2. Find the endpoint, or ask for it
+## 2. Find where to send, or ask
 
 Two values: `KUKUROO_ORIGIN` (where the Worker answers) and `KUKUROO_SEND_TOKEN` (the bearer token).
 Take the first source that has both.
 
 1. Already in the environment.
-2. `$XDG_CONFIG_HOME/kukuroo/env`, written by `kukuroo init`:
+2. The file this skill wrote the last time it asked:
    ```sh
-   ls -l "${XDG_CONFIG_HOME:-$HOME/.config}/kukuroo/env"
+   cat "${XDG_CONFIG_HOME:-$HOME/.config}/kukuroo/env" 2>/dev/null
    ```
-3. `./kukuroo.credentials.json`, when the cwd is the user's push project. Read `origin` and
-   `sendToken` from it, and offer to run step 2's `agent-env` so the next project does not have to.
 
-**Nothing found: ask.** The user has just said they want a notification, so getting the endpoint is
-part of the job rather than a reason to stop. The two values are asked differently, because only one
-of them is a secret.
+There is no third source. A Kukuroo deployment is set up on one machine and sent to from any number
+of others, so the setup leaves nothing behind here to find, and a search for one is a search that
+comes back empty.
 
-- **Origin** is public. Ask in the conversation: "which address does your Kukuroo Worker answer on?"
-- **Send token** is a credential. Give the user the choice and name the difference in a clause:
+**Ask once, in one message.** The user has just asked for a notification, so getting the address is
+part of the job. Both values in one question, in about two sentences:
 
-  > Run `kukuroo agent-env --origin <origin>` yourself and paste nothing — in Claude Code, prefixing
-  > a command with `!` runs it here. Or paste the token and I'll store it, which does put it in this
-  > transcript.
+> Which origin does your Kukuroo Worker answer on, and what is its send token? Pasting the token puts
+> it in this transcript; if you would rather it did not, put both in `~/.config/kukuroo/env` yourself
+> (`KUKUROO_ORIGIN=` and `KUKUROO_SEND_TOKEN=`, a line each) and say when it is done.
+
+Then let it go. If the answer does not come, or comes back as "not now", drop Kukuroo and do the work
+they actually asked for. One question costs them a moment. A second one costs them the thread.
 
 **Store on first success, not on being told.** Hold the answers for the length of the turn, send the
-warm-up, and write the env file only once a send has come back with `delivered` above zero:
+warm-up, and write the file only once a send has come back with `delivered` above zero:
 
 ```sh
 umask 077 && mkdir -p "${XDG_CONFIG_HOME:-$HOME/.config}/kukuroo"
@@ -63,9 +64,12 @@ printf 'KUKUROO_ORIGIN=%s\nKUKUROO_SEND_TOKEN=%s\n' "$KUKUROO_ORIGIN" "$KUKUROO_
   > "${XDG_CONFIG_HOME:-$HOME/.config}/kukuroo/env"
 ```
 
-A wrong token never reaches disk that way, and the user is asked once ever rather than once per
+A wrong token never reaches disk that way, and the user is asked once per machine rather than once per
 project. Say the file was written, in the same breath as the warm-up result — storing a credential is
 never something to do quietly.
+
+A `401` means the token in that file is stale, which is what a rotation on another machine looks like
+from here. Ask for the new one the same way, once, and overwrite the file.
 
 ## 3. Warm up, then say what will happen
 

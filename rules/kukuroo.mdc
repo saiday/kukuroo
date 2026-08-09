@@ -17,14 +17,14 @@ or Kukuroo by name. Work they are sitting there watching needs no notification.
 
 ## Find the endpoint
 
-`KUKUROO_ORIGIN` and `KUKUROO_SEND_TOKEN`, from the first source holding both: the environment;
-`$XDG_CONFIG_HOME/kukuroo/env`; `./kukuroo.credentials.json` (`origin` and `sendToken`) when the cwd
-is the user's push project.
+`KUKUROO_ORIGIN` and `KUKUROO_SEND_TOKEN`, from the environment or from
+`$XDG_CONFIG_HOME/kukuroo/env`. There is nowhere else to look: Kukuroo is deployed from one machine
+and sent to from others, so the setup left nothing behind here.
 
-Nothing found: ask. The origin is public, so ask for it in conversation. The token is a credential, so
-prefer having the user run `kukuroo agent-env --origin <origin>` themselves, which keeps it out of the
-transcript. Store both in the env file only **after** a send has succeeded, so a wrong token never
-reaches disk:
+Neither: **ask once, in one message**, for both values, and say in a clause that pasting the token puts
+it in the transcript while writing `~/.config/kukuroo/env` themselves does not. If the answer does not
+come, drop Kukuroo and get on with the work they asked for. Store both in the env file only **after** a
+send has succeeded, so a wrong token never reaches disk:
 
 ```sh
 umask 077 && mkdir -p "${XDG_CONFIG_HOME:-$HOME/.config}/kukuroo"
