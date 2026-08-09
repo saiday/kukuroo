@@ -121,6 +121,45 @@ bare DNS CNAME pointed at `workers.dev` is not one, and fails at Cloudflare's ed
 the send token is a server secret and a page holding one should fail its first test rather
 than work quietly.
 
+## Agents
+
+Your coding agent can send these, which is most of the point of having a phone in
+the loop. Point it at the deployment once:
+
+```sh
+npx kukuroo agent-env --origin push.example.com
+```
+
+That writes `~/.config/kukuroo/env` at 0600, holding the origin and the send token and
+not the VAPID key. It is shell-sourceable, so a send never has to name the token:
+
+```sh
+set -a; . ~/.config/kukuroo/env; set +a
+curl -fsS -X POST "$KUKUROO_ORIGIN/push/send" -H "authorization: Bearer $KUKUROO_SEND_TOKEN" ...
+```
+
+`init` writes that file itself once it knows the origin, and `rotate send-token` keeps it
+current. The reason it lives in your config directory rather than in the project is that
+an agent told "ping me when this finishes" is almost never standing in the push project's
+directory.
+
+Then teach the agent what to do with it. For Claude Code that is a plugin, and this
+repository is its own marketplace:
+
+```sh
+claude plugin marketplace add saiday/kukuroo
+claude plugin install kukuroo@kukuroo
+```
+
+From then on "ping me on my phone when the tests finish" works in any project, and so
+does naming a time. The skill sends a warm-up notification before it promises a later
+one, because a subscription dies silently and an untested promise is a promise made on
+faith. Cursor and anything else that reads a rules file gets the same contract from
+`rules/kukuroo.mdc`.
+
+[The agents guide](docs/agents.md) covers the rest: what makes it fire, what it is told
+about the payload, and why a scheduled push needs the session to stay open.
+
 ## API
 
 ```

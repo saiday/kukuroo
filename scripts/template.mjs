@@ -36,6 +36,7 @@ export const README_SECTIONS = {
   // same decision as choosing whether to mount, so the README tells it once.
   ownUi: `${README}#mounted`,
   api: `${README}#api`,
+  agents: `${README}#agents`,
 };
 
 /**

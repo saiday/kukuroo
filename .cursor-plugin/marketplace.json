@@ -1,0 +1,14 @@
+{
+  "name": "kukuroo",
+  "owner": {
+    "name": "Saiday",
+    "url": "https://github.com/saiday/kukuroo"
+  },
+  "plugins": [
+    {
+      "name": "kukuroo",
+      "source": "./",
+      "description": "Notify the user on their own phone, through their own Kukuroo Worker"
+    }
+  ]
+}

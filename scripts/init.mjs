@@ -32,7 +32,8 @@
 
 import { webcrypto as crypto } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { createInterface } from "node:readline/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -286,6 +287,183 @@ function writeCredentials(credentials) {
   ensureGitignored();
 }
 
+// ---------------------------------------------------------------------------
+// The agent-facing copy of where to send.
+//
+// An agent told "ping me when this finishes" is almost never standing in the
+// push project's directory, so neither the credentials file nor wrangler.jsonc is
+// reachable from where it is. One file in the user's config directory is what
+// makes the endpoint discoverable from every project on the machine, and it is
+// shell-sourceable so the command that reads it never has to name the token:
+//
+//   set -a; . ~/.config/kukuroo/env; set +a
+//
+// It holds the origin and the send token, and deliberately not the VAPID key.
+// Sending needs a bearer token; a second copy of a private key that can never be
+// rotated is only a second thing to lose.
+
+const agentEnvPath = () =>
+  resolve(process.env.XDG_CONFIG_HOME || join(homedir(), ".config"), "kukuroo", "env");
+
+function writeAgentEnv({ origin, sendToken }) {
+  const path = agentEnvPath();
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+  writeFileSync(path, `KUKUROO_ORIGIN=${origin}\nKUKUROO_SEND_TOKEN=${sendToken}\n`, {
+    mode: 0o600,
+  });
+  // writeFileSync's mode applies to a file it creates and not to one it
+  // overwrites, and this path is overwritten on every send-token rotation.
+  chmodSync(path, 0o600);
+  console.log(`  wrote ${path} (0600)`);
+}
+
+/** The file's contents as an object, or null if it is not there. */
+function readAgentEnv() {
+  const path = agentEnvPath();
+  if (!existsSync(path)) return null;
+  const values = {};
+  for (const line of readFileSync(path, "utf8").split("\n")) {
+    const match = line.match(/^([A-Z][A-Z0-9_]*)=(.*)$/);
+    if (match !== null) values[match[1]] = match[2];
+  }
+  return values;
+}
+
+/**
+ * A hostname or a URL in, an origin out.
+ *
+ * Both spellings turn up: `wrangler.jsonc` route patterns are bare hostnames,
+ * and the address printed after a deploy is a URL. A trailing slash is the third
+ * spelling, and it matters, because this value gets concatenated with
+ * `/push/send`.
+ */
+function normaliseOrigin(value) {
+  const withScheme = /^https?:\/\//i.test(value) ? value : `https://${value}`;
+  try {
+    return new URL(withScheme).origin;
+  } catch {
+    die(`${JSON.stringify(value)} is not a hostname or a URL.\n\n  --origin push.example.com`);
+  }
+}
+
+/**
+ * The one paragraph about agents, printed where a summary is already being read.
+ *
+ * It is a paragraph rather than a section because it is optional: the deployment
+ * works the same whether or not anything here is ever installed. The install is
+ * two lines and the value is one sentence, so both fit.
+ */
+function agentNote(knownOrigin) {
+  const wired =
+    knownOrigin === null
+      ? `Once you know the origin, point this machine's agents at it:
+
+     npx kukuroo agent-env --origin <your origin>
+`
+      : `This machine's agents can already find it: the origin and send token are in
+${agentEnvPath()}, which init just wrote.
+`;
+
+  return `
+${wired}
+Then teach them what to do with it, once:
+
+     claude plugin marketplace add saiday/kukuroo
+     claude plugin install kukuroo@kukuroo
+
+After that, "ping me on my phone when the tests finish" works in any project, and
+so does asking for a status update at a time you name. ${README_SECTIONS.agents}
+`;
+}
+
+/**
+ * Point the agents on this machine at a deployment that already exists.
+ *
+ * The token is read from the local credentials file or from stdin, and never from
+ * argv: an argument is visible in `ps` for the life of the process and lands in
+ * shell history afterwards. Keeping the credential out of places it gets copied to
+ * is the entire reason this command exists instead of the instruction being "tell
+ * your agent the send token".
+ */
+function agentEnvCommand(argv) {
+  let origin;
+  let fromStdin = false;
+
+  for (let i = 0; i < argv.length; i++) {
+    switch (argv[i]) {
+      case "--origin": {
+        const value = argv[++i];
+        if (value === undefined || value.startsWith("-")) {
+          die(`--origin needs a hostname or URL, e.g. --origin push.example.com\n\n${USAGE}`);
+        }
+        origin = normaliseOrigin(value);
+        break;
+      }
+      case "--token-stdin":
+        fromStdin = true;
+        break;
+      default:
+        die(`Unknown option ${JSON.stringify(argv[i])} for agent-env.\n\n${USAGE}`);
+    }
+  }
+
+  const credentials = existsSync(credentialsPath())
+    ? JSON.parse(readFileSync(credentialsPath(), "utf8"))
+    : null;
+
+  if (origin === undefined) {
+    if (credentials?.origin !== undefined) origin = normaliseOrigin(credentials.origin);
+    else {
+      die(
+        "I do not know which origin to point them at.\n\n" +
+          "  npx kukuroo agent-env --origin push.example.com\n\n" +
+          "It is the address your Worker answers on: the custom domain in\n" +
+          "wrangler.jsonc, or the workers.dev URL printed when you deployed. A\n" +
+          "deployment set up before this command existed does not record it, which is\n" +
+          "why it has to be given here.",
+      );
+    }
+  }
+
+  let sendToken;
+  if (fromStdin) {
+    sendToken = readFileSync(0, "utf8").trim();
+    if (sendToken === "") die("--token-stdin: nothing arrived on stdin.");
+  } else if (credentials?.sendToken !== undefined) {
+    sendToken = credentials.sendToken;
+  } else {
+    die(
+      `No ${credentialsPath()} here, so there is no send token to read.\n\n` +
+        "Run this from the directory holding it, or pipe the token in so it stays out\n" +
+        "of your shell history:\n\n" +
+        `  pbpaste | npx kukuroo agent-env --origin ${origin} --token-stdin`,
+    );
+  }
+
+  console.log("");
+  writeAgentEnv({ origin, sendToken });
+  console.log(`
+Agents on this machine can find your deployment now.
+
+     Origin   ${origin}
+
+The file is shell-sourceable, so a send never has to name the token:
+
+     set -a; . ${agentEnvPath()}; set +a
+     curl -fsS -X POST "$KUKUROO_ORIGIN/push/send" \\
+       -H "authorization: Bearer $KUKUROO_SEND_TOKEN" \\
+       -H 'content-type: application/json' \\
+       -d '{"notification":{"title":"hello","navigate":"'"$KUKUROO_ORIGIN"'/"}}'
+
+Teach them what to do with it, once:
+
+     claude plugin marketplace add saiday/kukuroo
+     claude plugin install kukuroo@kukuroo
+
+\`rotate send-token\` updates this file too, so a rotation does not leave them
+holding a token that 401s. ${README_SECTIONS.agents}`);
+}
+
 function refuseVapidRotation() {
   die(
     "There is no rotate for the VAPID keypair, on purpose.\n\n" +
@@ -318,6 +496,17 @@ async function rotate(what) {
 
   putSecret(SECRET_NAMES[field], value);
   writeCredentials(credentials);
+
+  // The agent env file holds a copy of the send token, so a rotation that did not
+  // reach it leaves every agent on this machine holding a token that now 401s.
+  // Only rewrite a file that already exists: creating one here would be this
+  // command quietly taking on a second job.
+  if (what === "send-token") {
+    const existing = readAgentEnv();
+    if (existing !== null && existing.KUKUROO_ORIGIN !== undefined) {
+      writeAgentEnv({ origin: existing.KUKUROO_ORIGIN, sendToken: value });
+    }
+  }
 
   console.log(`\nRotated ${what}. Safe: nothing is bound to it, and no device re-enrols.`);
   if (what === "send-token") {
@@ -903,6 +1092,19 @@ async function standaloneSetup(dir, answers, { shouldDeploy }) {
   const name = workerName(basename(target));
   const liveOrigin = shouldDeploy ? deployStandalone(name, answers) : null;
 
+  // Write the origin down next to the token. A custom domain knew it before the
+  // deploy; a workers.dev address is only knowable after one, and until now it was
+  // printed and nowhere else, so anything wanting to send later had to be told by
+  // hand where to send. Absent stays absent when wrangler's output did not name
+  // one -- a guessed origin is worse than a missing one.
+  const knownOrigin =
+    liveOrigin ?? (answers.origin?.kind === "domain" ? originUrl(answers.origin) : null);
+  if (knownOrigin !== null) {
+    credentials.origin = knownOrigin;
+    writeCredentials(credentials);
+    writeAgentEnv({ origin: knownOrigin, sendToken: credentials.sendToken });
+  }
+
   const steps = [backupNote(`${dir}/kukuroo.credentials.json`)];
 
   // The deploy happened but wrangler's output did not name the origin, so the one
@@ -982,7 +1184,7 @@ That is setup. From then on, a notification is one request:
        -H "authorization: Bearer <the send token, below>" \\
        -H 'content-type: application/json' \\
        -d '{"notification":{"title":"hello","navigate":"${origin}/"}}'
-
+${agentNote(knownOrigin)}
 Everything else, in more detail: ${README_SECTIONS.standalone}`);
 
   printCredentialsNote(credentials, answers);
@@ -1015,7 +1217,8 @@ Done. The secrets are installed on the Worker this directory deploys.
 ${backupNote("kukuroo.credentials.json", "")}
 
 Then deploy your Worker as you always do, and the push routes are live on the
-origin you already own.`);
+origin you already own.
+${agentNote(null)}`);
   printCredentialsNote(credentials, answers);
 }
 
@@ -1045,6 +1248,10 @@ Commands:
   init --resume           finish an interrupted setup from the local credentials
   rotate send-token       replace the send token
   rotate invite-code      replace the invite code
+  agent-env               point this machine's coding agents at a deployment,
+                          by writing the origin and send token to
+                          ~/.config/kukuroo/env (0600). init does this for you;
+                          this is for a deployment that predates it.
 
 Answers:
 
@@ -1059,6 +1266,13 @@ Answers:
   --yes                         take every default, ask nothing
   --deploy, --no-deploy         deploy a standalone Worker once it is set up
                                 (default: yes with a terminal, no without)
+
+agent-env takes:
+
+  --origin <hostname>           the address the Worker answers on. Read from the
+                                credentials file when it records one
+  --token-stdin                 read the send token from stdin instead of the
+                                credentials file, so it stays out of your history
 
 Only the VAPID keypair is permanent; there is no rotate for it.`;
 
@@ -1156,6 +1370,12 @@ switch (command) {
   case "rotate":
     assertAuthenticated();
     await rotate(rest[0]);
+    break;
+  // No `assertAuthenticated` here: this writes one local file from values that
+  // already exist, and talks to Cloudflare not at all. Requiring a wrangler login
+  // to record an origin would be a check that protects nothing.
+  case "agent-env":
+    agentEnvCommand(rest);
     break;
   default:
     die(`Unknown command ${JSON.stringify(command)}.\n\n${USAGE}`);
