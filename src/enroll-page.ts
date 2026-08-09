@@ -49,61 +49,144 @@ export function enrolmentPage(options: EnrolmentPageOptions): string {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="${title}">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="robots" content="noindex, nofollow">
 <title>${title}</title>
 <style>
   :root { color-scheme: light dark }
-  body { margin: 0; padding: 2rem 1.25rem; font: 16px/1.55 -apple-system, system-ui, sans-serif;
-         max-width: 32rem; margin-inline: auto }
-  h1 { font-size: 1.25rem; margin: 0 0 1rem }
-  input, button { font: inherit; width: 100%; padding: .7rem .8rem; border-radius: .5rem;
-                  box-sizing: border-box }
+  * { box-sizing: border-box }
+
+  /* The page fills the window rather than sitting at the top of it. On a phone
+     this is the whole screen, which is the point: one instruction at a time, at
+     a size somebody can read while holding the device and following along. */
+  body { margin: 0; min-height: 100dvh; display: grid; place-items: center;
+         padding: max(1.5rem, env(safe-area-inset-top)) 1.25rem
+                  max(1.5rem, env(safe-area-inset-bottom));
+         font: 16px/1.55 -apple-system, system-ui, sans-serif }
+  main { width: 100%; max-width: 26rem }
+
+  /* One dot per step that applies to this browser, so the count is never a lie. */
+  #rail { display: flex; gap: .45rem; justify-content: center; margin-bottom: 2.25rem }
+  #rail span { width: .5rem; height: .5rem; border-radius: 50%; background: currentColor;
+               opacity: .18; transition: opacity .2s }
+  #rail span[data-done] { opacity: .5 }
+  #rail span[data-on] { opacity: 1 }
+
+  h1 { font-size: 1.5rem; line-height: 1.25; margin: 0 0 .75rem; letter-spacing: -.01em }
+  #lede { margin: 0 0 1.75rem; opacity: .75 }
+
+  input, button { font: inherit; width: 100%; padding: .8rem .9rem; border-radius: .6rem }
   input { border: 1px solid color-mix(in srgb, currentColor 30%, transparent); background: none;
-          color: inherit; margin-bottom: .75rem }
+          color: inherit; margin-bottom: .6rem }
   button { border: 0; background: currentColor; cursor: pointer }
   button span { color: Canvas; font-weight: 600 }
-  button[disabled] { opacity: .4 }
-  #status { margin-top: 1rem; white-space: pre-wrap }
-  .warn { padding: .8rem; border-radius: .5rem;
-          background: color-mix(in srgb, currentColor 8%, transparent) }
+  button[disabled] { opacity: .4; cursor: default }
+
+  #status { margin-top: 1.25rem; white-space: pre-wrap }
+  #status[data-error] { padding: .8rem .9rem; border-radius: .6rem;
+                        background: color-mix(in srgb, currentColor 8%, transparent) }
+  noscript { display: block; opacity: .75 }
 </style>
 
-<h1>${title}</h1>
-<div id="gate" class="warn" hidden></div>
-<form id="form">
-  ${inviteField}<button type="submit"><span>Enable notifications</span></button>
-</form>
-<div id="status"></div>
+<main id="app">
+  <div id="rail" aria-hidden="true" hidden></div>
+  <h1 id="heading">${title}</h1>
+  <p id="lede"></p>
+  <form id="form" hidden>
+    ${inviteField}<button type="submit"><span>Enable notifications</span></button>
+  </form>
+  <div id="status" role="status" aria-live="polite"></div>
+  <noscript>This page needs JavaScript to enrol a device.</noscript>
+</main>
 
 <script type="module">
-// JSON.stringify does not escape "</script>", so the closing bracket is split.
+// A closing script tag ends this element even inside a JS string or a comment,
+// because the HTML tokenizer never parses the JavaScript to find out. That is
+// what the escaping below is for, and it is why no comment in here may spell one
+// out: writing the tag to explain the precaution is itself the bug.
 const SUBSCRIBE_PATH = ${JSON.stringify(options.subscribePath).replace(/</g, "\\u003c")};
 const PUBLIC_KEY_PATH = ${JSON.stringify(options.publicKeyPath).replace(/</g, "\\u003c")};
 
-const gate = document.getElementById("gate");
+const rail = document.getElementById("rail");
+const heading = document.getElementById("heading");
+const lede = document.getElementById("lede");
 const form = document.getElementById("form");
 const status = document.getElementById("status");
 const invite = document.getElementById("invite");
+
+// The operator's title, whatever they configured it to. Read off the rendered
+// heading rather than re-escaped into this script, so there is one copy of it.
+const TITLE = heading.textContent;
 
 const installed = window.navigator.standalone === true ||
   window.matchMedia("(display-mode: standalone)").matches;
 const iOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
 
+// iOS can only enrol from an installed web app, so it has a step that macOS does
+// not, and the rail is built from the steps that actually apply. A fixed "1 of 3"
+// would be wrong on half the devices that reach this page.
+const steps = iOS ? ["install", "enrol"] : ["enrol"];
+
+/** Fill the rail: everything before the current step is done, everything after pending. */
+function paint(current) {
+  rail.hidden = steps.length < 2 || current < 0;
+  rail.replaceChildren();
+  for (let i = 0; i < steps.length; i++) {
+    const dot = document.createElement("span");
+    if (i < current) dot.dataset.done = "";
+    if (i === current) dot.dataset.on = "";
+    rail.append(dot);
+  }
+}
+
+/**
+ * Show exactly one screen. Everything the operator's reader sees goes through
+ * here, so there is never a half-state with a stale instruction above a fresh
+ * form, which is the failure the old single-screen layout kept producing.
+ */
+function show({ step = -1, title, body, withForm = false }) {
+  paint(step);
+  heading.textContent = title;
+  lede.textContent = body;
+  form.hidden = !withForm;
+  status.textContent = "";
+  delete status.dataset.error;
+}
+
+function fail(message) {
+  status.textContent = message;
+  status.dataset.error = "";
+}
+
 // On iOS, push exists only in an installed web app. In a Safari tab
 // window.pushManager is simply absent, so the failure looks like a broken page
 // rather than a missing step. Say the step out loud instead.
 if (iOS && !installed) {
-  gate.hidden = false;
-  gate.textContent = "Open the Share menu, choose Add to Home Screen, then open this " +
-    "page from the new icon. Notifications cannot be enabled from a Safari tab.";
-  form.hidden = true;
+  show({
+    step: 0,
+    title: "Add this to your Home Screen",
+    body: "Tap the Share button, choose Add to Home Screen, then open this from the " +
+      "new icon to carry on. Notifications cannot be enabled from a browser tab: " +
+      "that is Apple's rule rather than this app's.",
+  });
 } else if (!("pushManager" in window)) {
-  gate.hidden = false;
-  gate.textContent = "This browser does not support Declarative Web Push. " +
-    "It needs Safari: 18.4 or later on iOS, installed to the Home Screen, " +
-    "or 18.5 or later on macOS, where a normal tab works.";
-  form.hidden = true;
+  show({
+    title: "This browser cannot enrol",
+    body: "Declarative Web Push has only shipped in Safari so far. Receiving needs an " +
+      "iPhone or iPad on iOS 18.4 or later with this page added to the Home Screen, or " +
+      "macOS Safari 18.5 or later, where a normal tab works. Chrome, Firefox, and " +
+      "Android cannot enrol.",
+  });
+} else {
+  show({
+    step: steps.length - 1,
+    title: TITLE,
+    body: invite === null
+      ? "Allow notifications when your browser asks, and this device is enrolled."
+      : "Enter your invite code, then allow notifications when your browser asks.",
+    withForm: true,
+  });
 }
 
 function b64urlToBytes(s) {
@@ -116,6 +199,7 @@ form.addEventListener("submit", async (event) => {
   const button = form.querySelector("button");
   button.disabled = true;
   status.textContent = "";
+  delete status.dataset.error;
 
   try {
     const permission = await Notification.requestPermission();
@@ -147,10 +231,17 @@ form.addEventListener("submit", async (event) => {
       throw new Error(body.error || ("subscribe failed: HTTP " + response.status));
     }
 
-    status.textContent = "Enrolled. This device will now receive notifications.";
-    form.hidden = true;
+    // Every dot filled, no form, and the one thing that silently destroys a
+    // subscription said out loud while the reader is still looking at the icon.
+    show({
+      step: steps.length,
+      title: "This device is enrolled",
+      body: "Notifications from this deployment will arrive here from now on." +
+        (iOS ? " Keep the Home Screen icon: deleting it removes the subscription, and " +
+          "nothing anywhere reports that it is gone." : ""),
+    });
   } catch (error) {
-    status.textContent = "Failed: " + error.message;
+    fail("Failed: " + error.message);
     button.disabled = false;
   }
 });
