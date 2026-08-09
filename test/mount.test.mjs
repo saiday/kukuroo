@@ -2,6 +2,11 @@
 // the fan-out, and CORS. The crypto has its own file; this one is about the
 // contract a deployment actually speaks. If this fails, an enrolment page or a
 // sender somewhere sees behaviour the README does not describe.
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { mountKukuroo } from "../src/mount.ts";
 
 const ok = (label, cond) => {
@@ -218,6 +223,45 @@ const openPage = await (await openKukuroo.handle(req("/push/enroll"), openEnv)).
 ok("the open enrolment page has no code field to type into", !openPage.includes('id="invite"'));
 const gatedPage = await (await kukuroo.handle(req("/push/enroll"), env)).text();
 ok("the gated enrolment page still asks for one", gatedPage.includes('id="invite"'));
+
+// The page ships its JavaScript inline, and the HTML tokenizer ends a script
+// element at the first closing tag it sees, without parsing the JS around it. A
+// closing tag anywhere in that source, in a string or even in a comment, cuts the
+// script short and renders the remainder as visible text. That is not cosmetic:
+// everything past the cut never runs, so the form loses its submit handler and the
+// iOS gate never appears, which reads as three unrelated bugs.
+//
+// Three checks, because they fail on different things and none subsumes the rest.
+// One closing tag is what catches the truncation. The submit handler surviving the
+// cut is what proves the script the browser gets is the whole script: truncation
+// can land inside a comment and leave behind something that parses perfectly well,
+// as the original bug did. And the parse is what catches an ordinary syntax error,
+// which nothing else here would, because this source is a string as far as the
+// compiler is concerned and tsc never looks inside it.
+const scratch = mkdtempSync(join(tmpdir(), "kukuroo-page-"));
+for (const [label, page] of [["gated", gatedPage], ["open", openPage]]) {
+  const closes = page.split("</scr" + "ipt").length - 1;
+  ok(`the ${label} page closes its script exactly once`, closes === 1);
+
+  const body = page.slice(
+    page.indexOf(">", page.indexOf("<script")) + 1,
+    page.indexOf("</scr" + "ipt"),
+  );
+  ok(`the ${label} page delivers its whole script to the browser`,
+    body.includes('addEventListener("submit"'));
+
+  const file = join(scratch, `${label}.mjs`);
+  writeFileSync(file, body);
+  let parsed = true;
+  let complaint = "";
+  try {
+    execFileSync(process.execPath, ["--check", file], { stdio: "pipe" });
+  } catch (error) {
+    parsed = false;
+    complaint = String(error.stderr ?? "").split("\n").slice(0, 3).join(" ");
+  }
+  ok(`the ${label} page's client JavaScript parses${parsed ? "" : `: ${complaint}`}`, parsed);
+}
 
 // The default is the safe one: an option that is absent, misspelled, or lost in
 // a config that never reached the Worker leaves the gate standing.
