@@ -5,31 +5,39 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Kukuroo: self-hosted web push worker for iOS</title>
 <meta name="description" content="A self-hosted web push worker that works on iOS. One Cloudflare Worker, your own keys, no app to build and no notification vendor in the middle.">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3.4' fill='%23203129'/%3E%3Cpath d='M2.3 14V6.4A2.6 2.6 0 0 1 4.9 3.8H11.1A2.6 2.6 0 0 1 13.7 6.4V14Z' fill='%23c9a254'/%3E%3Cpath d='M4.9 14V8.4A1.8 1.8 0 0 1 6.7 6.6H9.3A1.8 1.8 0 0 1 11.1 8.4V14Z' fill='%23203129'/%3E%3Cpath d='M7 14V10.6A1 1 0 0 1 9 10.6V14Z' fill='%23c9a254'/%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3.4' fill='%230e2439'/%3E%3Cpath d='M2.3 14V6.4A2.6 2.6 0 0 1 4.9 3.8H11.1A2.6 2.6 0 0 1 13.7 6.4V14Z' fill='%234da3ff'/%3E%3Cpath d='M4.9 14V8.4A1.8 1.8 0 0 1 6.7 6.6H9.3A1.8 1.8 0 0 1 11.1 8.4V14Z' fill='%230e2439'/%3E%3Cpath d='M7 14V10.6A1 1 0 0 1 9 10.6V14Z' fill='%234da3ff'/%3E%3C/svg%3E">
 <style>
   :root {
-    --snow: #f4f6f3;
-    --ink: #1f2a24;
-    --feather: #5c6d63;
-    --pine: #203129;
-    --pine-deep: #182620;
-    --brass: #8a6b25;
-    --brass-bright: #c9a254;
-    --card: #ffffff;
-    --rule: #d8ddd7;
+    --snow: #f2f6fb;
+    --ink: #0f1b2a;
+    --feather: #55677e;
+    /* Azure, at two weights: the darker one is the only one that clears
+       contrast on the light background, the brighter one owns the dark side. */
+    --azure: #0b62d6;
+    --azure-bright: #4da3ff;
+    --rule: #d3dde9;
+    /* The terminal is its own room, like the phone screen: these do not
+       follow the page's light mode. */
+    --term-bg: #0b1420;
+    --term-bar: #13202e;
+    --term-edge: #1d2d3f;
+    --term-fg: #d5e2f2;
+    --term-dim: #7d93aa;
     --mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
     --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --snow: #141d18;
-      --ink: #e6ebe6;
-      --feather: #93a49a;
-      --pine: #1b2a23;
-      --pine-deep: #101a15;
-      --brass: #c9a254;
-      --card: #222f28;
-      --rule: #2c3a32;
+      --snow: #0a1017;
+      --ink: #e4ebf4;
+      --feather: #8ba0b8;
+      --azure: #62aaff;
+      --rule: #223142;
+      /* Against a dark page the terminal has to come forward rather than
+         recede, so it lifts a step and the edge brightens. */
+      --term-bg: #0f1c2a;
+      --term-bar: #17273a;
+      --term-edge: #2a3d53;
     }
   }
 
@@ -38,9 +46,9 @@
     background: var(--snow); color: var(--ink);
     font: 17px/1.6 var(--sans); -webkit-font-smoothing: antialiased;
   }
-  a { color: var(--brass); text-decoration-thickness: 1px; text-underline-offset: 3px; }
+  a { color: var(--azure); text-decoration-thickness: 1px; text-underline-offset: 3px; }
   a:hover { text-decoration-thickness: 2px; }
-  :focus-visible { outline: 2px solid var(--brass); outline-offset: 3px; border-radius: 2px; }
+  :focus-visible { outline: 2px solid var(--azure); outline-offset: 3px; border-radius: 2px; }
 
   .wrap { max-width: 64rem; margin-inline: auto; padding-inline: 1.25rem; }
 
@@ -70,20 +78,20 @@
   .lede { margin-top: 1.2rem; font-size: 1.1rem; max-width: 32rem; }
   .why { list-style: none; padding: 0; margin-top: .9rem; display: grid; gap: .6rem; max-width: 32rem; }
   .why li { position: relative; padding-left: 1.15rem; color: var(--feather); }
-  .why li::before { content: "\2014"; position: absolute; left: 0; color: var(--brass); }
+  .why li::before { content: "\2014"; position: absolute; left: 0; color: var(--azure); }
   .cta-row { margin-top: 1.8rem; display: flex; gap: 1rem; flex-wrap: wrap; align-items: center; }
   .btn {
     display: inline-block; padding: .7rem 1.15rem; border-radius: .45rem;
     font: 600 .95rem var(--mono); text-decoration: none;
   }
-  .btn.solid { background: var(--ink); color: var(--snow); }
-  .btn.solid:hover { background: var(--pine); }
+  .btn.solid { background: var(--azure); color: #ffffff; }
+  .btn.solid:hover { background: #0a53b4; }
   @media (prefers-color-scheme: dark) {
-    .btn.solid { background: var(--brass); color: #141d18; }
-    .btn.solid:hover { background: var(--brass-bright); }
+    .btn.solid { background: var(--azure); color: #07131f; }
+    .btn.solid:hover { background: var(--azure-bright); }
   }
   .btn.ghost { border: 1.5px solid var(--rule); color: var(--ink); }
-  .btn.ghost:hover { border-color: var(--brass); }
+  .btn.ghost:hover { border-color: var(--azure); }
 
   /* ---------- the phone: a day of alerts, arriving ---------- */
   /* Everything inside the bezel is fixed-colour on purpose. The screen is its
@@ -91,15 +99,15 @@
   .phone {
     width: 252px; justify-self: center; padding: .5rem;
     border-radius: 2.5rem;
-    background: linear-gradient(155deg, #46504a, #1a201d 38%, #2f3833);
+    background: linear-gradient(155deg, #454f5f, #171d26 38%, #2b3441);
     /* The hairline is what keeps the bezel off the background in dark mode,
        where the two are nearly the same value. */
-    box-shadow: 0 26px 55px rgba(20, 35, 27, .3), 0 0 0 1px rgba(255, 255, 255, .07);
+    box-shadow: 0 26px 55px rgba(11, 30, 54, .32), 0 0 0 1px rgba(255, 255, 255, .07);
   }
   .screen {
     position: relative; aspect-ratio: 9 / 19.5; overflow: hidden;
     border-radius: 2.1rem; padding: .75rem .5rem 1.4rem;
-    background: linear-gradient(168deg, #2b4034 0%, #16221c 52%, #22332a 100%);
+    background: linear-gradient(168deg, #1d3d63 0%, #0d1725 52%, #1a2c45 100%);
     display: flex; flex-direction: column;
   }
   .island {
@@ -118,7 +126,7 @@
     display: grid; grid-template-columns: auto 1fr auto; gap: .45rem; align-items: start;
   }
   .notif .appicon {
-    width: 1.55rem; height: 1.55rem; border-radius: .42rem; background: #203129;
+    width: 1.55rem; height: 1.55rem; border-radius: .42rem; background: #0e2439;
     display: grid; place-items: center;
   }
   .notif b { font: 600 .74rem/1.3 var(--sans); display: block; }
@@ -152,37 +160,50 @@
     font: 700 1rem var(--mono); letter-spacing: .14em; text-transform: uppercase;
     color: var(--feather); margin-bottom: 1.5rem;
   }
-  h2::before { content: "// "; color: var(--brass); }
   .punches { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: 2rem; }
   .punch b { font: 650 1.05rem var(--sans); display: block; margin-bottom: .35rem; }
   .punch p { color: var(--feather); font-size: .97rem; }
 
+  /* ---------- terminal ---------- */
+  /* The chrome sits outside the scroller on purpose: an overlaid title bar
+     would slide away with the content the moment a long line is scrolled. */
   .term {
-    background: var(--pine); color: #dfe7df; border: 1px solid var(--pine-deep);
-    border-radius: .6rem; padding: 1.05rem 1.2rem; font: .86rem/1.7 var(--mono);
+    background: var(--term-bg); border: 1px solid var(--term-edge);
+    border-radius: .6rem; overflow: hidden;
+    box-shadow: 0 12px 28px rgba(9, 20, 34, .16);
+  }
+  .term-bar {
+    display: flex; align-items: center; gap: .55rem;
+    padding: .5rem .85rem; background: var(--term-bar);
+    border-bottom: 1px solid var(--term-edge);
+  }
+  /* One dot, plus two more drawn by the shadow. */
+  .term-bar .dots {
+    flex: none; width: .5rem; height: .5rem; border-radius: 50%;
+    background: #ff5f57; box-shadow: .78rem 0 0 #febc2e, 1.56rem 0 0 #28c840;
+    margin-right: 1.56rem;
+  }
+  .term-bar .title { font: 600 .72rem var(--mono); color: var(--term-dim); letter-spacing: .04em; }
+  .term-body {
+    color: var(--term-fg); padding: 1.05rem 1.2rem; font: .86rem/1.7 var(--mono);
     overflow-x: auto; white-space: pre;
   }
-  .term .cmt { color: #8fa596; }
-  .term .str { color: var(--brass-bright); }
-  .term .out { color: #9fb8a6; }
+  /* The one command the install section is about, set large enough to read as
+     the instruction rather than as a sample. */
+  .term.large .term-body { font-size: 1rem; padding: 1.4rem 1.5rem; }
+  .term .pmt { color: var(--azure-bright); -webkit-user-select: none; user-select: none; }
+  .term .cmt { color: #61798f; }
+  .term .str { color: #7fd39a; }
+  .term .out { color: #56b6e0; }
+  .term .key { color: var(--azure-bright); }
   .caption { margin-top: 1rem; color: var(--feather); max-width: 42rem; }
 
-  /* ---------- the install decision tree ---------- */
+  /* The line that used to be a comment inside the block. It is the argument,
+     so it is set above the code rather than buried in it. */
+  .pitch { max-width: 44rem; margin-bottom: 1.4rem; font-size: 1.12rem; color: var(--feather); }
+  .pitch b { font-weight: 650; }
+
   .defs { max-width: 44rem; margin-bottom: 1.6rem; }
-  .tree { max-width: 42rem; border-left: 2px solid var(--rule); }
-  .branch {
-    position: relative; padding: .95rem 0 .95rem 1.6rem;
-    display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 1rem; align-items: baseline;
-  }
-  .branch + .branch { border-top: 1px solid var(--rule); }
-  /* The tick that turns the trunk into a branch. */
-  .branch::before {
-    content: ""; position: absolute; left: 0; top: 1.55rem;
-    width: 1.1rem; height: 2px; background: var(--rule);
-  }
-  .branch .stmt { font-size: 1rem; }
-  .branch .leaf { font: 600 .9rem var(--mono); color: var(--brass); text-decoration: none; white-space: nowrap; }
-  .branch .leaf:hover { text-decoration: underline; }
 
   /* Two up, not three: a 300px column truncates half of every command, and
      these blocks are the argument the section is making. */
@@ -193,18 +214,19 @@
   .step { counter-increment: step; }
   .step::before {
     content: counter(step, decimal-leading-zero);
-    font: 700 .9rem var(--mono); color: var(--brass); display: block; margin-bottom: .5rem;
+    font: 700 .9rem var(--mono); color: var(--azure); display: block; margin-bottom: .5rem;
   }
   .step b { font: 650 1.03rem var(--sans); display: block; margin-bottom: .35rem; }
   .step p { font-size: .95rem; color: var(--feather); }
   /* Wrapping these would break paths and indentation mid-token, so the long
      lines scroll inside the block instead. The block scrolls, not the page. */
-  .step .term { margin-top: .8rem; font-size: .78rem; padding: .9rem 1rem; }
+  .step .term { margin-top: .8rem; }
+  .step .term-body { font-size: .78rem; padding: .9rem 1rem; }
   .more { margin-top: 1.8rem; font: 600 .9rem var(--mono); }
 
   .spec { list-style: none; padding: 0; display: grid; gap: .85rem; max-width: 44rem; }
   .spec li { position: relative; padding-left: 1.15rem; color: var(--feather); font-size: .98rem; }
-  .spec li::before { content: "\2014"; position: absolute; left: 0; color: var(--brass); }
+  .spec li::before { content: "\2014"; position: absolute; left: 0; color: var(--azure); }
   .spec b { color: var(--ink); font-weight: 650; }
   .opinionated { max-width: 44rem; margin-bottom: 1.2rem; }
 
@@ -215,11 +237,6 @@
 
   @media (max-width: 54rem) {
     .hero { grid-template-columns: 1fr; padding-block: 2.6rem 3rem; gap: 2.6rem; }
-  }
-  /* Side by side, the statement gets three wrapped lines and the outcome gets
-     a lonely column. Stack them instead. */
-  @media (max-width: 34rem) {
-    .branch { grid-template-columns: 1fr; gap: .35rem; }
   }
 </style>
 </head>
@@ -257,22 +274,22 @@
         </div>
         <div class="moments armed" id="moments" aria-hidden="true">
           <div class="notif">
-            <div class="appicon"><svg width="17" height="17" viewBox="0 0 16 16"><path d="M2.3 14V6.4A2.6 2.6 0 0 1 4.9 3.8H11.1A2.6 2.6 0 0 1 13.7 6.4V14Z" fill="#c9a254"/><path d="M4.9 14V8.4A1.8 1.8 0 0 1 6.7 6.6H9.3A1.8 1.8 0 0 1 11.1 8.4V14Z" fill="#203129"/><path d="M7 14V10.6A1 1 0 0 1 9 10.6V14Z" fill="#c9a254"/></svg></div>
+            <div class="appicon"><svg width="17" height="17" viewBox="0 0 16 16"><path d="M2.3 14V6.4A2.6 2.6 0 0 1 4.9 3.8H11.1A2.6 2.6 0 0 1 13.7 6.4V14Z" fill="#4da3ff"/><path d="M4.9 14V8.4A1.8 1.8 0 0 1 6.7 6.6H9.3A1.8 1.8 0 0 1 11.1 8.4V14Z" fill="#0e2439"/><path d="M7 14V10.6A1 1 0 0 1 9 10.6V14Z" fill="#4da3ff"/></svg></div>
             <div><b>Task W13 finished</b><span class="body">W14 is unblocked and ready to start</span></div>
             <time>now</time>
           </div>
           <div class="notif">
-            <div class="appicon"><svg width="17" height="17" viewBox="0 0 16 16"><path d="M2.3 14V6.4A2.6 2.6 0 0 1 4.9 3.8H11.1A2.6 2.6 0 0 1 13.7 6.4V14Z" fill="#c9a254"/><path d="M4.9 14V8.4A1.8 1.8 0 0 1 6.7 6.6H9.3A1.8 1.8 0 0 1 11.1 8.4V14Z" fill="#203129"/><path d="M7 14V10.6A1 1 0 0 1 9 10.6V14Z" fill="#c9a254"/></svg></div>
+            <div class="appicon"><svg width="17" height="17" viewBox="0 0 16 16"><path d="M2.3 14V6.4A2.6 2.6 0 0 1 4.9 3.8H11.1A2.6 2.6 0 0 1 13.7 6.4V14Z" fill="#4da3ff"/><path d="M4.9 14V8.4A1.8 1.8 0 0 1 6.7 6.6H9.3A1.8 1.8 0 0 1 11.1 8.4V14Z" fill="#0e2439"/><path d="M7 14V10.6A1 1 0 0 1 9 10.6V14Z" fill="#4da3ff"/></svg></div>
             <div><b>Watchlist</b><span class="body">Omnium Cargo is down 14%</span></div>
             <time>9m ago</time>
           </div>
           <div class="notif">
-            <div class="appicon"><svg width="17" height="17" viewBox="0 0 16 16"><path d="M2.3 14V6.4A2.6 2.6 0 0 1 4.9 3.8H11.1A2.6 2.6 0 0 1 13.7 6.4V14Z" fill="#c9a254"/><path d="M4.9 14V8.4A1.8 1.8 0 0 1 6.7 6.6H9.3A1.8 1.8 0 0 1 11.1 8.4V14Z" fill="#203129"/><path d="M7 14V10.6A1 1 0 0 1 9 10.6V14Z" fill="#c9a254"/></svg></div>
+            <div class="appicon"><svg width="17" height="17" viewBox="0 0 16 16"><path d="M2.3 14V6.4A2.6 2.6 0 0 1 4.9 3.8H11.1A2.6 2.6 0 0 1 13.7 6.4V14Z" fill="#4da3ff"/><path d="M4.9 14V8.4A1.8 1.8 0 0 1 6.7 6.6H9.3A1.8 1.8 0 0 1 11.1 8.4V14Z" fill="#0e2439"/><path d="M7 14V10.6A1 1 0 0 1 9 10.6V14Z" fill="#4da3ff"/></svg></div>
             <div><b>Deploy finished</b><span class="body">kukuroo.cc is live</span></div>
             <time>25m ago</time>
           </div>
           <div class="notif">
-            <div class="appicon"><svg width="17" height="17" viewBox="0 0 16 16"><path d="M2.3 14V6.4A2.6 2.6 0 0 1 4.9 3.8H11.1A2.6 2.6 0 0 1 13.7 6.4V14Z" fill="#c9a254"/><path d="M4.9 14V8.4A1.8 1.8 0 0 1 6.7 6.6H9.3A1.8 1.8 0 0 1 11.1 8.4V14Z" fill="#203129"/><path d="M7 14V10.6A1 1 0 0 1 9 10.6V14Z" fill="#c9a254"/></svg></div>
+            <div class="appicon"><svg width="17" height="17" viewBox="0 0 16 16"><path d="M2.3 14V6.4A2.6 2.6 0 0 1 4.9 3.8H11.1A2.6 2.6 0 0 1 13.7 6.4V14Z" fill="#4da3ff"/><path d="M4.9 14V8.4A1.8 1.8 0 0 1 6.7 6.6H9.3A1.8 1.8 0 0 1 11.1 8.4V14Z" fill="#0e2439"/><path d="M7 14V10.6A1 1 0 0 1 9 10.6V14Z" fill="#4da3ff"/></svg></div>
             <div><b>New post</b><span class="body">&ldquo;Moving to the US because I&rsquo;m too rich&rdquo;</span></div>
             <time>1h ago</time>
           </div>
@@ -303,124 +320,89 @@
   <section>
     <div class="wrap">
       <h2>Send a push notification in seconds</h2>
-      <div class="term" aria-label="A curl command that sends a notification"><span class="cmt"># from cron, CI, a Raspberry Pi, your backend, a shell alias</span>
-curl -X POST https://push.example.com/push/send \
+      <p class="pitch">From cron, CI, a Raspberry Pi, your backend, a shell alias.
+      <b>Anything that can make an HTTP call can ring your phone.</b></p>
+      <div class="term">
+        <div class="term-bar"><span class="dots" aria-hidden="true"></span><span class="title">bash</span></div>
+        <pre class="term-body"><span class="pmt">$ </span>curl -X POST https://push.example.com/push/send \
   -H <span class="str">"authorization: Bearer $KUKUROO_SEND_TOKEN"</span> \
   -d <span class="str">'{"notification":{"title":"Task W13 finished",
        "body":"W14 is unblocked and ready to start",
        "navigate":"https://push.example.com/"}}'</span>
-<span class="out">{"delivered":1,"removed":0,"failures":[]}</span></div>
-      <p class="caption">Anything that can make an HTTP call can ring your phone.</p>
+<span class="out">{"delivered":1,"removed":0,"failures":[]}</span></pre>
+      </div>
     </div>
   </section>
 
   <section id="install">
     <div class="wrap">
-      <h2>Install</h2>
+      <h2>One-Click Integration</h2>
       <p class="defs">
-        <b>Standalone</b> is its own Worker at its own address, serving the
-        enrolment page it ships with. <b>Mounted</b> is three lines inside a
-        Worker you already run. You do not have to decide first: setup asks
-        whether you want the front end it ships with, and that answer decides
-        most of it. Find your line anyway:
+        Setup takes less than a minute. One command writes the Worker, generates
+        every key, installs them, provisions storage, and deploys.
       </p>
-      <div class="tree">
-        <div class="branch">
-          <p class="stmt">I don't run a Cloudflare Worker yet.</p>
-          <a class="leaf" href="#standalone">Standalone &rarr;</a>
-        </div>
-        <div class="branch">
-          <p class="stmt">I run one, and notification taps should land inside my
-          own site.</p>
-          <a class="leaf" href="#mount">Mounted &rarr;</a>
-        </div>
-        <div class="branch">
-          <p class="stmt">I run one, but push can live on its own address, away
-          from my site.</p>
-          <a class="leaf" href="#standalone">Standalone &rarr;</a>
-        </div>
+      <div class="term large">
+        <div class="term-bar"><span class="dots" aria-hidden="true"></span><span class="title">bash</span></div>
+        <pre class="term-body"><span class="pmt">$ </span>npx kukuroo init my-push</pre>
       </div>
-    </div>
-  </section>
-
-  <section id="standalone">
-    <div class="wrap">
-      <h2>Standalone</h2>
-      <div class="steps">
-        <div class="step">
-          <b>Answer two questions</b>
-          <p>One command writes the Worker, generates every key, and installs
-          them. Storage provisions itself. Pass the answers as flags instead and
-          it asks nothing.</p>
-          <div class="term">npx kukuroo init my-push
-<span class="out">  Use the bundled front end?                [Y/n]
-  Require an invite code to enrol a device? [y/N]</span>
-cd my-push &amp;&amp; npx wrangler deploy</div>
-        </div>
-        <div class="step">
-          <b>Put it on your Home Screen</b>
-          <p>Open the page in Safari, Add to Home Screen, open it from the icon.
-          Apple's rule, once per device. The invite code, if you asked for one,
-          is typed here.</p>
-        </div>
-        <div class="step">
-          <b>POST when something happens</b>
-          <p>The curl above, from anything that can reach the internet. The
-          response counts the devices it reached.</p>
-        </div>
-      </div>
-      <p class="caption">The first question is the personal one. With the code
-      on, only devices you invite can enrol; with it off, anyone who reaches the
-      page can, and will get everything you send. Both answers are one word in
-      <code>src/worker.ts</code> afterwards, and no device re-enrols.</p>
-      <p class="more"><a href="https://github.com/saiday/kukuroo#standalone">The full standalone setup, step by step &rarr;</a></p>
+      <p class="caption">That's it. You now have a push server of your own. Open
+      the printed URL in Safari on your iPhone, Add to Home Screen, and open it
+      from the icon. Apple's rule, once per device.</p>
     </div>
   </section>
 
   <section id="mount">
     <div class="wrap">
-      <h2>Mounted into a Worker you already have</h2>
+      <h2>Already have a Worker? Mount it.</h2>
+      <p class="defs">
+        If you already run a site on Cloudflare Workers, Kukuroo mounts into the
+        router you have. Devices enrol on your hostname, which is where a
+        notification tap should land.
+      </p>
       <div class="steps">
         <div class="step">
           <b>Hand it your requests first</b>
           <p><code>handle</code> returns null outside its prefix, so your own
           routing is untouched.</p>
-          <div class="term">import { mountKukuroo } from <span class="str">"kukuroo"</span>;
+          <div class="term">
+            <div class="term-bar"><span class="dots" aria-hidden="true"></span><span class="title">src/worker.ts</span></div>
+            <pre class="term-body">import { mountKukuroo } from <span class="str">"kukuroo"</span>;
 
-const kukuroo = mountKukuroo({
-  prefix: <span class="str">"/push"</span>,
-  requireInvite: true,
-});
+const kukuroo = mountKukuroo({ prefix: <span class="str">"/push"</span> });
 
 export default {
   async fetch(request, env) {
     const hit = await kukuroo.handle(request, env);
     return hit ?? yourRouter(request, env);
   },
-};</div>
+};</pre>
+          </div>
         </div>
         <div class="step">
           <b>Bind KV, then generate the keys</b>
           <p>The binding name is fixed; the namespace provisions on your next
           deploy.</p>
-          <div class="term"><span class="cmt">// wrangler.jsonc</span>
-"kv_namespaces": [{ "binding": "KUKUROO_SUBS" }]
+          <div class="term">
+            <div class="term-bar"><span class="dots" aria-hidden="true"></span><span class="title">wrangler.jsonc</span></div>
+            <pre class="term-body"><span class="key">"kv_namespaces"</span>: [{ <span class="key">"binding"</span>: <span class="str">"KUKUROO_SUBS"</span> }]
 
 <span class="cmt"># then, from that directory</span>
-npm install kukuroo &amp;&amp; npx kukuroo init --mounted</div>
+<span class="pmt">$ </span>npm install kukuroo &amp;&amp; npx kukuroo init --mounted</pre>
+          </div>
         </div>
         <div class="step">
           <b>Serve enrolment on your origin</b>
           <p>Return the bundled page from a route of yours, or build your own
-          against <code>/push/subscribe</code>. Devices enrol on your hostname,
-          which is where a tap should land.</p>
-          <div class="term">import { enrolmentPage } from <span class="str">"kukuroo"</span>;
+          against <code>/push/subscribe</code>.</p>
+          <div class="term">
+            <div class="term-bar"><span class="dots" aria-hidden="true"></span><span class="title">src/worker.ts</span></div>
+            <pre class="term-body">import { enrolmentPage } from <span class="str">"kukuroo"</span>;
 
 return new Response(enrolmentPage({
   subscribePath: <span class="str">"/push/subscribe"</span>,
   publicKeyPath: <span class="str">"/push/public-key"</span>,
-  requireInvite: true,
-}), { headers: { <span class="str">"content-type"</span>: <span class="str">"text/html"</span> } });</div>
+}), { headers: { <span class="str">"content-type"</span>: <span class="str">"text/html"</span> } });</pre>
+          </div>
         </div>
       </div>
       <p class="more"><a href="https://github.com/saiday/kukuroo#mounted">The full mounted setup, step by step &rarr;</a></p>
