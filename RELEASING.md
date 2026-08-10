@@ -6,7 +6,7 @@ Work top to bottom. Anything that fails is a stop, not a note to self: this pack
 generates keys that cannot be rotated and enrolls devices that cannot be repaired from
 another origin, so a bad release costs somebody their subscriptions rather than a patch.
 
-## 1. Repo state
+## 1. Preflight: repo state and the ability to publish
 
 ```sh
 git switch main && git pull
@@ -16,6 +16,28 @@ git log $(git describe --tags --abbrev=0)..HEAD --oneline
 
 - [ ] Clean tree, on `main`, synced with origin.
 - [ ] Read the commit list above. It is the changelog and it decides the next number.
+
+Then prove you can actually publish, before anything else is built, deployed, or torn down.
+
+```sh
+npm whoami                      # must not 401
+npm profile get                 # shows the two-factor mode
+```
+
+- [ ] Logged in as the maintainer.
+- [ ] You can produce a working second factor **right now**, not in principle. With
+      `two-factor auth: auth-and-writes`, every publish needs a one-time password, and a
+      TOTP code is only valid if the clock on the device generating it is accurate. An
+      authenticator that has drifted emits codes that look fine and are rejected every time.
+- [ ] If you publish with a granular access token instead, confirm it exists, is scoped to
+      this package with write access, and has 2FA bypass enabled. Note that `npm token
+      create` cannot be used to make one, because creating a token is itself a write and
+      needs the very OTP you may be unable to produce. That one is made on the website.
+
+This section is here because of the release that skipped it. Everything downstream passed,
+the QA Worker was torn down, and only then did four consecutive publishes fail on a second
+factor nobody had tested. The order matters: an unpublishable release discovered early costs
+a minute, and discovered last costs the deployment you were still using to verify things.
 
 ## 2. Version
 
@@ -130,6 +152,9 @@ Do this before publishing, not after. A QA Worker left running is a live enrolla
 with a real invite code, and the credentials file on disk is the only copy of a VAPID key
 that now has devices attached to it.
 
+Before deleting anything, re-read section 1. Tearing down while the publish is still unproven
+is what turns a credential problem into a lost test environment.
+
 ```sh
 cd <qa-dir>
 npx wrangler delete                                  # the Worker and its secrets
@@ -148,12 +173,36 @@ rm -rf <qa-dir>                                      # includes kukuroo.credenti
 ## 9. Publish
 
 ```sh
-npm whoami                      # must not 401
 npm publish --dry-run
-npm publish
-git tag v<version> && git push origin main --tags
+npm publish --otp=<code>        # or via a granular token, below
 ```
 
-- [ ] Logged in as the maintainer.
-- [ ] Tag pushed, and it matches the published version.
+Publishing with a token, without writing it into `~/.npmrc` where it outlives the release:
+
+```sh
+RC="$(mktemp -t npmrc-publish)" && chmod 600 "$RC"
+printf '//registry.npmjs.org/:_authToken=%s\n' "$TOKEN" > "$RC"
+NPM_CONFIG_USERCONFIG="$RC" npm publish
+rm -f "$RC"
+```
+
+- [ ] Published, and `npm view kukuroo version` reports the new number.
+- [ ] Install it from the registry, not from the working tree, and check the things that
+      only the published artifact can be wrong about: `docs/` present, every relative README
+      link resolving inside `node_modules`, and the `bin` runnable.
+
+```sh
+cd "$(mktemp -d)" && npm init -y >/dev/null && npm i kukuroo@<version>
+./node_modules/.bin/kukuroo init --help
+```
+
+Then the tag, which points at the commit whose tree was published, not at wherever `main`
+has since moved:
+
+```sh
+git tag v<version> <commit> && git push origin main --tags
+```
+
+- [ ] Tag pushed, and it names the commit the tarball was built from.
 - [ ] `npx kukuroo@latest init --help` works from a directory with no checkout.
+- [ ] If a token was used, revoke it unless you intend to keep it.
