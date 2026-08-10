@@ -145,7 +145,15 @@ function assertAuthenticated() {
     output = String(error.stdout ?? "") + String(error.stderr ?? "");
   }
 
-  if (/logged in|account id|api token/i.test(output)) return;
+  // Negative signals first. wrangler's own failures quote the same words the
+  // positive check looks for ("Failed to automatically retrieve account IDs for
+  // the logged in user"), so a substring match alone passes on exactly the
+  // output that should stop the run. Failing here costs one `wrangler login`;
+  // passing here costs an unrecoverable key, so the order is not arbitrary.
+  const authenticated =
+    !/failed to|\berror\b|not authenticated|non-interactive environment/i.test(output) &&
+    /logged in|account id|api token/i.test(output);
+  if (authenticated) return;
 
   die(
     "Not logged in to Cloudflare, so stopping before anything is generated.\n\n" +
@@ -223,7 +231,15 @@ function existingSecretNames() {
     // one is a normal first run, the other is a misconfiguration that would
     // otherwise be silently reinterpreted as "no secrets exist" and walked past.
     const stderr = String(error.stderr ?? "");
-    if (/not found/i.test(stderr)) return null;
+    // Specifically "this Worker does not exist", not any failure that happens
+    // to contain the words. An account "not found", a KV namespace "not
+    // found", or an npm "404 Not Found" while resolving wrangler all used to
+    // match, and each one returned null, skipped the overwrite guard below,
+    // and let uploadSecrets replace a live KUKUROO_VAPID_PRIVATE. That kills
+    // every enrolled device permanently, with a 201 on every send afterwards.
+    if (/(worker|script)[^\n]*not found|not found[^\n]*(worker|script)|10007/i.test(stderr)) {
+      return null;
+    }
     die(
       "Could not read the Worker's secret list. wrangler said:\n\n" +
         stderr.trim() +
@@ -316,8 +332,14 @@ async function rotate(what) {
   credentials[field] = value;
   credentials.rotatedAt = { ...credentials.rotatedAt, [field]: new Date().toISOString() };
 
-  putSecret(SECRET_NAMES[field], value);
+  // Local file first, then the upload, for the reason provisionSecrets spells
+  // out: Worker Secrets are write-only, so a value that reaches Cloudflare but
+  // not the disk cannot be read back from anywhere. Uploading first meant a
+  // failed write left the Worker rejecting every sender with 401 and no copy of
+  // the token that would fix it. This way round, a failed upload leaves the
+  // file ahead of the Worker and `npx kukuroo init --resume` finishes the job.
   writeCredentials(credentials);
+  putSecret(SECRET_NAMES[field], value);
 
   console.log(`\nRotated ${what}. Safe: nothing is bound to it, and no device re-enrols.`);
   if (what === "send-token") {
@@ -456,16 +478,21 @@ const QUESTIONS = {
       "deploy, and nothing re-enrols. Sets `requireInvite` on mountKukuroo().",
     choices: [
       {
-        label: "No, notifications are for whoever turns up",
-        hint: "Anyone who reaches the URL can enrol a device.",
-        value: false,
-      },
-      {
         label: "Yes, this is for my own devices",
         hint: "Stops a stranger who finds your URL from receiving everything you send.",
         value: true,
       },
+      {
+        label: "No, notifications are for whoever turns up",
+        hint: "Anyone who reaches the URL can enrol a device.",
+        value: false,
+      },
     ],
+    // The gate stands unless someone says otherwise, matching mountKukuroo's
+    // own default. Every unattended path lands here: `--yes`, CI, a piped
+    // stdin, an editor shell. Defaulting the other way scaffolded and deployed
+    // an open /subscribe on all of them, and an open endpoint reports nothing,
+    // so nobody finds out until a stranger is reading their notifications.
     default: 0,
     summary: (v) => (v ? "invite required" : "open enrolment"),
   },
@@ -511,7 +538,7 @@ function nextQuestion(answers) {
  */
 function totalQuestions(answers, answered) {
   const probe = { ...answers };
-  const settled = { frontEnd: true, shape: "standalone", origin: WORKERS_DEV, requireInvite: false };
+  const settled = { frontEnd: true, shape: "standalone", origin: WORKERS_DEV, requireInvite: true };
   let total = answered;
   for (let key = nextQuestion(probe); key !== null; key = nextQuestion(probe)) {
     probe[key] = settled[key];
@@ -1055,7 +1082,7 @@ Answers:
                                 by --front-end)
   --origin <hostname>           enrol devices on a domain you have on Cloudflare
   --workers-dev                 enrol devices on a workers.dev address (default)
-  --invite, --no-invite         require the invite code to enrol (default: no)
+  --invite, --no-invite         require the invite code to enrol (default: yes)
   --yes                         take every default, ask nothing
   --deploy, --no-deploy         deploy a standalone Worker once it is set up
                                 (default: yes with a terminal, no without)

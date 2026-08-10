@@ -7,6 +7,7 @@
  */
 
 import { encryptPayload } from "./encrypt.ts";
+import { InvalidRequest } from "./errors.ts";
 import { buildDeclarativePayload, type BuildPayloadOptions } from "./payload.ts";
 import { utf8 } from "./bytes.ts";
 import { deleteSubscription, listSubscriptions } from "./subscriptions.ts";
@@ -36,6 +37,45 @@ export interface SendResult {
 
 const DEFAULT_TTL_SECONDS = 4 * 60 * 60;
 
+/** RFC 8030 §5.4: at most 32 characters from the base64url alphabet. */
+const TOPIC_PATTERN = /^[A-Za-z0-9_-]{1,32}$/;
+
+/**
+ * Just under 2^31 seconds. The bound is what makes this check mean anything:
+ * `Number.isInteger(1e21)` is true, and `String(1e21)` is "1e+21", so an
+ * integer test alone still lets exponent notation reach the TTL header, which
+ * every push service then rejects for every subscription.
+ */
+const MAX_TTL_SECONDS = 2_147_483_647;
+
+/**
+ * The two header fields, checked once before the loop.
+ *
+ * Everything else the caller supplies is validated by buildDeclarativePayload
+ * before any network call, for the reason stated there: a bad value is bad for
+ * every device, and finding out after a partial fan-out is strictly worse. TTL
+ * and Topic went straight into the headers instead, so a typo'd one produced a
+ * rejection per subscription and an HTTP 200 carrying `delivered: 0`, which
+ * reads as "it worked" everywhere except the phone.
+ */
+function assertHeaderOptions(options: SendOptions): void {
+  const { ttl, topic } = options;
+  if (ttl !== undefined && (!Number.isInteger(ttl) || ttl < 0 || ttl > MAX_TTL_SECONDS)) {
+    throw new InvalidRequest(
+      `ttl must be an integer number of seconds between 0 and ${MAX_TTL_SECONDS}; got ` +
+        `${JSON.stringify(ttl)}. It goes out as the TTL header, and a push service rejects ` +
+        `a malformed one for every subscription.`,
+    );
+  }
+  if (topic !== undefined && (typeof topic !== "string" || !TOPIC_PATTERN.test(topic))) {
+    throw new InvalidRequest(
+      `topic must be 1 to 32 characters from the base64url alphabet (A-Z a-z 0-9 - _); ` +
+        `got ${JSON.stringify(topic)}. RFC 8030 constrains it, and a push service rejects ` +
+        `a malformed one for every subscription.`,
+    );
+  }
+}
+
 /**
  * `sub` in the VAPID token must be a mailto: or https: URI. Apple rejects the
  * token without one and the 400 does not say why, so it is never left unset.
@@ -57,10 +97,15 @@ export async function send(env: KukurooEnv, options: SendOptions): Promise<SendR
   // The origin restriction is operator policy from the environment, never from
   // the request body: a caller holding the send token controls the body, so a
   // body-supplied limit would restrict nobody.
+  // An empty string is how an unset var reaches a Worker when someone declares
+  // it in wrangler.jsonc and leaves the value blank. `"" !== undefined` would
+  // activate the policy against an origin nothing can match.
   const json = buildDeclarativePayload(options, {
-    navigateOrigin: env.KUKUROO_NAVIGATE_ORIGIN,
+    navigateOrigin: env.KUKUROO_NAVIGATE_ORIGIN || undefined,
   });
   const plaintext = utf8(json);
+
+  assertHeaderOptions(options);
 
   // Validated once, before the loop, because it is an env-level mistake: a
   // malformed subject would otherwise surface as one failure per device, or
