@@ -121,6 +121,39 @@ bare DNS CNAME pointed at `workers.dev` is not one, and fails at Cloudflare's ed
 the send token is a server secret and a page holding one should fail its first test rather
 than work quietly.
 
+## Agents
+
+Your coding agent can send these, which is most of the point of having a phone in the
+loop. For Claude Code that is a plugin, and this repository is its own marketplace:
+
+```sh
+claude plugin marketplace add saiday/kukuroo
+claude plugin install kukuroo@kukuroo
+```
+
+From then on "ping me on my phone when the tests finish" works in any project, and so
+does naming a time. Setup is two questions, asked the first time it fires on a machine:
+the origin and the send token. It has to ask, because a deployment is set up on one
+machine and sent to from any number of others, so nothing `init` wrote is anywhere the
+agent can see.
+
+It caches the answers in `~/.config/kukuroo/env` at 0600, holding those two values and
+not the VAPID key. That file is shell-sourceable, so no later send has to name the
+token:
+
+```sh
+set -a; . ~/.config/kukuroo/env; set +a
+curl -fsS -X POST "$KUKUROO_ORIGIN/push/send" -H "authorization: Bearer $KUKUROO_SEND_TOKEN" ...
+```
+
+The file is written only after a notification has actually arrived, and a warm-up goes
+out before any promise of a later one, because a subscription dies silently and an
+untested promise is a promise made on faith. Cursor and anything else that reads a rules
+file gets the same contract from `rules/kukuroo.mdc`.
+
+[The agents guide](docs/agents.md) covers the rest: what makes it fire, what it is told
+about the payload, and why a scheduled push needs the session to stay open.
+
 ## API
 
 ```

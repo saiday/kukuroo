@@ -1,0 +1,72 @@
+---
+description: When the user asks to be notified, pinged, or sent a status update on their phone, names a time they want to be told at, says they are stepping away from the monitor, or mentions Kukuroo, send the notification through their own Kukuroo Worker.
+alwaysApply: false
+---
+
+# Notifying the user on their phone
+
+Kukuroo is the user's own Web Push service on their own Cloudflare Worker. One authenticated POST puts
+a notification on their phone. Kukuroo is the pipe, not the errand: spend a line or two on it and get
+back to the work they asked for.
+
+## Send only when asked
+
+A push arrives on a lock screen wherever the user happens to be, so it is theirs to ask for: a
+notification on their phone, a time they want to be told at, a mention of stepping away or being afk,
+or Kukuroo by name. Work they are sitting there watching needs no notification.
+
+## Find the endpoint
+
+`KUKUROO_ORIGIN` and `KUKUROO_SEND_TOKEN`, from the environment or from
+`$XDG_CONFIG_HOME/kukuroo/env`. There is nowhere else to look: Kukuroo is deployed from one machine
+and sent to from others, so the setup left nothing behind here.
+
+Neither: **ask once, in one message**, for both values, and say in a clause that pasting the token puts
+it in the transcript while writing `~/.config/kukuroo/env` themselves does not. If the answer does not
+come, drop Kukuroo and get on with the work they asked for. Store both in the env file only **after** a
+send has succeeded, so a wrong token never reaches disk:
+
+```sh
+umask 077 && mkdir -p "${XDG_CONFIG_HOME:-$HOME/.config}/kukuroo"
+printf 'KUKUROO_ORIGIN=%s\nKUKUROO_SEND_TOKEN=%s\n' "$KUKUROO_ORIGIN" "$KUKUROO_SEND_TOKEN" \
+  > "${XDG_CONFIG_HOME:-$HOME/.config}/kukuroo/env"
+```
+
+## Warm up before promising
+
+Before committing to a notification later, send one now and say so in about two sentences: what is
+coming, when, and that if the warm-up did not arrive the setup needs a look
+(https://github.com/saiday/kukuroo#agents). A subscription dies silently — deleting the Home Screen
+icon destroys it and nothing reports that — so an untested promise is a promise made on faith. Warm up
+once per session.
+
+## Send
+
+```sh
+set -a; . "${XDG_CONFIG_HOME:-$HOME/.config}/kukuroo/env"; set +a
+curl -fsS -X POST "$KUKUROO_ORIGIN/push/send" \
+  -H "authorization: Bearer $KUKUROO_SEND_TOKEN" \
+  -H 'content-type: application/json' \
+  -d '{"notification":{"title":"tests green","body":"412 passed in 38s","tag":"ci","navigate":"'"$KUKUROO_ORIGIN"'/"}}'
+```
+
+The response is `{"delivered":N,"removed":N,"failures":[]}`. **`"delivered":0` is a failure** — the
+request succeeded and nothing reached a phone, usually because no device is enrolled. Report it.
+
+Four payload rules, each here because getting it wrong fails invisibly: the push service returns 201
+and WebKit discards the message with no error anywhere.
+
+- `title` required and non-empty; `navigate` required and absolute. `$KUKUROO_ORIGIN/` is always a
+  correct `navigate`, and the deployment may pin it to exactly that origin.
+- One `tag` per topic, so a second notification about the same thing replaces the first rather than
+  stacking beside it.
+- Write the title to be read alone at a glance: the outcome, not a label. "migration failed on users
+  table", not "task update".
+- Keep secrets, tokens, and absolute paths out of `title` and `body`. A lock screen is not private.
+
+`image`, `badge`, `vibrate`, `timestamp`, `renotify`, `requireInteraction` and `actions` are rejected:
+WebKit does not implement them. Use `appBadge` for the Home Screen number. The JSON budget is about
+3900 bytes, and going over means the message is accepted and never delivered.
+
+Receiving needs Safari on iOS 18.4+ or macOS 18.5+, opened from a Home Screen icon. Chrome, Firefox
+and Android cannot receive these at all, which answers most reports of a notification never arriving.

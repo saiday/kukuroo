@@ -1,0 +1,21 @@
+{
+  "name": "kukuroo",
+  "description": "Notify the user on their own phone, through their own Kukuroo Worker: a self-hosted Web Push service on Cloudflare, with no vendor in the path",
+  "version": "0.1.0",
+  "author": {
+    "name": "Saiday"
+  },
+  "homepage": "https://github.com/saiday/kukuroo#readme",
+  "repository": "https://github.com/saiday/kukuroo",
+  "license": "MIT",
+  "keywords": [
+    "web-push",
+    "push-notifications",
+    "notifications",
+    "cloudflare-workers",
+    "ios",
+    "self-hosted"
+  ],
+  "skills": "./skills/",
+  "commands": ["./commands/"]
+}
