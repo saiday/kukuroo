@@ -64,6 +64,19 @@ ok("GET /push/enroll is 200", (await kukuroo.handle(req("/push/enroll"), env)).s
 ok("GET /push/public-key is 200", (await kukuroo.handle(req("/push/public-key"), env)).status === 200);
 ok("unknown route under the prefix is 404", (await kukuroo.handle(req("/push/nope"), env)).status === 404);
 
+// The prefix is operator-typed, and both ways of typing it slightly wrong used
+// to fail silently in opposite directions: no leading slash matched nothing and
+// unmounted every route, while "/" matched everything and answered the host
+// Worker's own pages with Kukuroo's 404.
+const noSlash = mountKukuroo({ prefix: "push", standalone: true });
+ok("a prefix with no leading slash still mounts the routes",
+  (await noSlash.handle(req("/push/public-key"), env)).status === 200);
+const rootMounted = mountKukuroo({ prefix: "/", standalone: true });
+ok("mounted at the root, our own routes still answer",
+  (await rootMounted.handle(req("/public-key"), env)).status === 200);
+ok("mounted at the root, the host's routes fall through instead of 404",
+  (await rootMounted.handle(req("/anything-of-the-hosts"), env)) === null);
+
 // ---- gates -----------------------------------------------------------------
 const wrongInvite = await kukuroo.handle(req("/push/subscribe", {
   method: "POST",
@@ -103,8 +116,10 @@ const badSubject = await kukuroo.handle(req("/push/send", {
   headers: { authorization: "Bearer token-token-token" },
   body: JSON.stringify({ notification: { title: "hi", navigate: "https://push.example.com/" } }),
 }), { ...env, KUKUROO_VAPID_SUBJECT: "saiday@example.com" });
+// 503, not 400: the subject is an operator's environment variable, and a caller
+// holding the send token cannot fix it by rewriting its notification.
 ok("a bare-email VAPID subject is refused by name, once, before the fan-out",
-  badSubject.status === 400 && (await badSubject.json()).error.includes("KUKUROO_VAPID_SUBJECT"));
+  badSubject.status === 503 && (await badSubject.json()).error.includes("KUKUROO_VAPID_SUBJECT"));
 
 // ---- CORS off (the default) ------------------------------------------------
 const noCorsPreflight = await kukuroo.handle(req("/push/subscribe", {
@@ -173,7 +188,77 @@ const corsSend = await kukuroo.handle(req("/push/send", {
 ok("send never gets a CORS header, even for an allowed origin",
   corsSend.headers.get("access-control-allow-origin") === null);
 
-// ---- missing configuration, the two failure shapes ---------------------------
+// ---- bodies that parse but are not objects ----------------------------------
+// `JSON.parse("null")` succeeds and `typeof null === "object"`, so this reached
+// the field reads and threw out of handle() as an unhandled exception.
+const nullBody = await kukuroo.handle(req("/push/subscribe", { method: "POST", body: "null" }), env);
+ok("a null body is a 400, not an exception out of handle()",
+  nullBody.status === 400 && (await nullBody.json()).error.includes("JSON object"));
+const arrayBody = await kukuroo.handle(req("/push/subscribe", { method: "POST", body: "[]" }), env);
+ok("an array body is a 400 too", arrayBody.status === 400);
+
+// ---- subscriptions that could never be encrypted for -------------------------
+// Stored, these are a device that is told "enrolled" and then silently receives
+// nothing forever, counting as a failure on every send.
+const shortKeys = await kukuroo.handle(req("/push/subscribe", {
+  method: "POST",
+  body: JSON.stringify({
+    invite: "invite-invite",
+    subscription: { endpoint: "https://web.push.apple.com/x", keys: { p256dh: "AAAA", auth: "AA" } },
+  }),
+}), env);
+ok("key material that cannot decrypt is refused at enrollment, not at send time",
+  shortKeys.status === 400 && (await shortKeys.json()).error.includes("p256dh"));
+
+// ---- caller fields that go straight into headers -----------------------------
+const badTtl = await kukuroo.handle(req("/push/send", {
+  method: "POST",
+  headers: { authorization: "Bearer token-token-token" },
+  body: JSON.stringify({ ttl: 1e21, notification: { title: "hi", navigate: "https://push.example.com/" } }),
+}), env);
+ok("a malformed ttl is one 400, not a 200 carrying delivered: 0",
+  badTtl.status === 400 && (await badTtl.json()).error.includes("ttl"));
+const badTopic = await kukuroo.handle(req("/push/send", {
+  method: "POST",
+  headers: { authorization: "Bearer token-token-token" },
+  body: JSON.stringify({ topic: "x".repeat(33), notification: { title: "hi", navigate: "https://push.example.com/" } }),
+}), env);
+ok("a malformed topic is refused the same way", badTopic.status === 400);
+
+// ---- notification members WebKit type-checks --------------------------------
+// A type mismatch makes WebKit discard the whole payload and display nothing,
+// so these are not smaller mistakes than a missing title.
+const badBody = await kukuroo.handle(req("/push/send", {
+  method: "POST",
+  headers: { authorization: "Bearer token-token-token" },
+  body: JSON.stringify({ notification: { title: "hi", navigate: "https://push.example.com/", body: 42 } }),
+}), env);
+ok("a numeric notification.body is a 400 rather than a silent non-display",
+  badBody.status === 400 && (await badBody.json()).error.includes("notification.body"));
+
+// ---- the navigate-origin policy, as an operator would type it ----------------
+// A trailing slash is what a browser address bar hands you, and comparing it
+// raw rejected every notification a correctly-configured deployment could send.
+const slashOrigin = { ...env, KUKUROO_NAVIGATE_ORIGIN: "https://push.example.com/" };
+const sameOrigin = await kukuroo.handle(req("/push/send", {
+  method: "POST",
+  headers: { authorization: "Bearer token-token-token" },
+  body: JSON.stringify({ notification: { title: "hi", navigate: "https://push.example.com/" } }),
+}), slashOrigin);
+ok("a trailing slash on KUKUROO_NAVIGATE_ORIGIN still matches its own origin",
+  sameOrigin.status === 200);
+const offOrigin = await kukuroo.handle(req("/push/send", {
+  method: "POST",
+  headers: { authorization: "Bearer token-token-token" },
+  body: JSON.stringify({ notification: { title: "hi", navigate: "https://elsewhere.example/" } }),
+}), slashOrigin);
+ok("and a genuinely off-origin navigate is still refused", offOrigin.status === 400);
+
+// ---- missing configuration -------------------------------------------------
+// Every unconfigured binding answers the same way: a 503 that names the thing
+// to go and set. A string secret and a KV namespace are equally easy to skip,
+// and the operator who skipped one is not helped by learning that the other
+// kind gets a sentence while theirs gets Cloudflare's 1101 page.
 const envNoSecret = { ...env };
 delete envNoSecret.KUKUROO_INVITE_CODE;
 ok("a missing secret returns the friendly 503",
@@ -181,14 +266,30 @@ ok("a missing secret returns the friendly 503",
 
 const envNoKV = { ...env };
 delete envNoKV.KUKUROO_SUBS;
-let threw = false;
-try {
-  await kukuroo.handle(req("/push/subscribe", {
-    method: "POST",
-    body: JSON.stringify({ invite: "invite-invite", subscription: subscriptionBody() }),
-  }), envNoKV);
-} catch { threw = true; }
-ok("a missing KV binding still throws (the host's opaque 500; see mount.ts)", threw);
+const noKV = await kukuroo.handle(req("/push/subscribe", {
+  method: "POST",
+  body: JSON.stringify({ invite: "invite-invite", subscription: subscriptionBody() }),
+}), envNoKV);
+ok("a missing KV binding returns a 503 naming the binding",
+  noKV.status === 503 && (await noKV.json()).error.includes("KUKUROO_SUBS"));
+
+const noKVSend = await kukuroo.handle(req("/push/send", {
+  method: "POST",
+  headers: { authorization: "Bearer token-token-token" },
+  body: JSON.stringify({ notification: { title: "hi", navigate: "https://push.example.com/" } }),
+}), envNoKV);
+ok("send says the same thing rather than blaming the caller's body",
+  noKVSend.status === 503 && (await noKVSend.json()).error.includes("KUKUROO_SUBS"));
+
+const envNoVapid = { ...env };
+delete envNoVapid.KUKUROO_VAPID_PRIVATE;
+const noVapidSend = await kukuroo.handle(req("/push/send", {
+  method: "POST",
+  headers: { authorization: "Bearer token-token-token" },
+  body: JSON.stringify({ notification: { title: "hi", navigate: "https://push.example.com/" } }),
+}), envNoVapid);
+ok("a missing VAPID key is a 503 on send, matching what public-key already said",
+  noVapidSend.status === 503 && (await noVapidSend.json()).error.includes("KUKUROO_VAPID_PRIVATE"));
 
 // ---- the gate opened on purpose ---------------------------------------------
 // `requireInvite: false` is the answer to "is this deployment personal?". It has

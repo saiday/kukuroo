@@ -126,7 +126,10 @@ function runInit(args) {
 // A workers.dev deployment, which is the default and the one that has to read
 // its own address off the deploy.
 
-const wd = runInit(["--deploy", "--workers-dev"]);
+// `--no-invite` is stated rather than taken: the default is now the gate, so an
+// open deployment is something a run has to ask for. The assertion further down
+// is about what an open deployment prints, and it needs a run that is one.
+const wd = runInit(["--deploy", "--workers-dev", "--no-invite"]);
 
 ok("init runs to the end", !wd.failed);
 if (wd.failed) console.log(wd.output);
@@ -219,6 +222,13 @@ ok("--link depends on the checkout that wrote the project",
   JSON.parse(readFileSync(linked.packagePath, "utf8")).dependencies.kukuroo === `file:${repo}`);
 ok("and says so where it says everything else it wrote",
   linked.output.includes(`kukuroo file:${repo}`));
+
+// This run answers neither --invite nor --no-invite, so it is the one that takes
+// the default. The default is the gate: every unattended path lands here, and
+// the other way round scaffolds an open /subscribe onto a URL nobody is watching.
+ok("the default answer scaffolds the gate closed",
+  readFileSync(join(dirname(linked.packagePath), "src", "worker.ts"), "utf8")
+    .includes("requireInvite: true"));
 
 // Without it, nothing changes: a checkout still scaffolds against GitHub, which
 // is what somebody setting up a real deployment from a clone wants.

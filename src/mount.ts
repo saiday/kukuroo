@@ -17,6 +17,7 @@
 
 import { enrollmentPage } from "./enroll-page.ts";
 import type { KukurooEnv } from "./env.ts";
+import { InvalidRequest } from "./errors.ts";
 import { send, type SendOptions } from "./send.ts";
 import { parseSubscriptionBody, putSubscription } from "./subscriptions.ts";
 import { importVapidKeys } from "./vapid.ts";
@@ -92,6 +93,32 @@ function requireSecret(
   console.error(`kukuroo: ${name} is not set on this Worker.`);
   return json(
     { error: `${name} is not configured on this Worker. Run \`npx kukuroo init\`.` },
+    503,
+    extraHeaders,
+  );
+}
+
+/**
+ * The same courtesy as requireSecret, for the one binding that is not a string.
+ *
+ * `env.KUKUROO_SUBS` is a KV namespace, so an unconfigured one is `undefined`
+ * and the first `.put` on it throws a TypeError straight out of `handle()`.
+ * The operator sees Cloudflare's opaque 1101 page on every enrollment while the
+ * cause is one missing line of wrangler config, and the binding name is not
+ * configurable, so it is the easiest step in the whole setup to skip.
+ */
+function requireSubs(
+  env: KukurooEnv,
+  extraHeaders: Record<string, string> = {},
+): KVNamespace | Response {
+  if (env.KUKUROO_SUBS !== undefined && env.KUKUROO_SUBS !== null) return env.KUKUROO_SUBS;
+  console.error("kukuroo: the KUKUROO_SUBS KV namespace is not bound to this Worker.");
+  return json(
+    {
+      error:
+        "KUKUROO_SUBS is not bound on this Worker. Add it to your wrangler config: " +
+        '"kv_namespaces": [{ "binding": "KUKUROO_SUBS", "id": "..." }].',
+    },
     503,
     extraHeaders,
   );
@@ -202,6 +229,22 @@ function preflight(
 }
 
 /**
+ * Normalise the prefix into the one shape the path test can reason about: a
+ * leading slash, no trailing one, and "" meaning the root.
+ *
+ * Both ends of this were wrong in opposite directions. `"push"` without the
+ * leading slash could never match `url.pathname`, so every route silently
+ * unmounted and the deploy still succeeded. `"/"` collapsed to `""`, after
+ * which `startsWith("/")` matched every request in existence and Kukuroo
+ * answered the host Worker's own pages with its 404.
+ */
+function normalizePrefix(raw: string): string {
+  const trimmed = raw.trim().replace(/\/+$/, "");
+  if (trimmed === "") return "";
+  return trimmed.startsWith("/") ? trimmed : "/" + trimmed;
+}
+
+/**
  * Settle the origin every notification's `navigate` must be on.
  *
  * KUKUROO_NAVIGATE_ORIGIN wins whenever it is set. Failing that, a deployment
@@ -224,7 +267,7 @@ function withNavigateOrigin(request: Request, env: KukurooEnv, standalone: boole
 }
 
 export function mountKukuroo(options: MountOptions = {}): KukurooRoutes {
-  const prefix = (options.prefix ?? "/push").replace(/\/+$/, "");
+  const prefix = normalizePrefix(options.prefix ?? "/push");
   const originsCache: OriginsCache = { origins: [] };
   // Default on, and only an explicit `false` turns it off. An absent option, a
   // typo'd one, or a var that failed to reach the Worker all leave the gate
@@ -287,7 +330,10 @@ export function mountKukuroo(options: MountOptions = {}): KukurooRoutes {
         return handleSend(request, withNavigateOrigin(request, env, options.standalone === true));
       }
 
-      return json({ error: "not found" }, 404);
+      // Mounted at the root, Kukuroo owns no namespace of its own, so an
+      // unrecognised path is the host Worker's business and must fall through.
+      // Anywhere else the prefix is ours and a 404 is the honest answer.
+      return prefix === "" ? null : json({ error: "not found" }, 404);
     },
   };
 }
@@ -303,6 +349,15 @@ async function handleSubscribe(
     body = (await request.json()) as Record<string, unknown>;
   } catch {
     return json({ error: "body must be JSON" }, 400, cors);
+  }
+
+  // `JSON.parse("null")` succeeds, and `typeof null === "object"`, so the catch
+  // above never fires for a null body and every field read below it throws
+  // instead. That escapes handle() as an unhandled exception and reaches the
+  // enroller as Cloudflare's opaque 1101 page, which is precisely the answer
+  // the 400 above exists to avoid.
+  if (body === null || typeof body !== "object" || Array.isArray(body)) {
+    return json({ error: "body must be a JSON object" }, 400, cors);
   }
 
   // With the gate open, the secret is not consulted at all: an `invite` in the
@@ -325,7 +380,10 @@ async function handleSubscribe(
     return json({ error: error instanceof Error ? error.message : String(error) }, 400, cors);
   }
 
-  await putSubscription(env.KUKUROO_SUBS, subscription);
+  const subs = requireSubs(env, cors);
+  if (subs instanceof Response) return subs;
+
+  await putSubscription(subs, subscription);
   return json({ ok: true }, 200, cors);
 }
 
@@ -337,6 +395,16 @@ async function handleSend(request: Request, env: KukurooEnv): Promise<Response> 
   if (token === null || !secretEquals(token, expected)) {
     return json({ error: "unauthorized" }, 401);
   }
+
+  // Checked here rather than left to `send()`, so a missing key answers with
+  // the 503 that names the variable, the same as GET <prefix>/public-key does
+  // for the identical fault. Reached through send() it was a `.trim()` of
+  // undefined, reported to the caller as a 400 about its own payload.
+  const vapid = requireSecret(env.KUKUROO_VAPID_PRIVATE, "KUKUROO_VAPID_PRIVATE");
+  if (vapid instanceof Response) return vapid;
+
+  const subs = requireSubs(env);
+  if (subs instanceof Response) return subs;
 
   let body: SendOptions;
   try {
@@ -351,6 +419,14 @@ async function handleSend(request: Request, env: KukurooEnv): Promise<Response> 
     // zero subscriptions has not sent anything, and only this number says so.
     return json(result);
   } catch (error) {
-    return json({ error: error instanceof Error ? error.message : String(error) }, 400);
+    // 400 says "your body was wrong" and 503 says "this deployment is broken",
+    // and the sender acts on the difference: a 400 is not worth retrying, so a
+    // misconfigured Worker reported as one stops the retry and hides the
+    // outage. Only the caller's own mistakes are thrown as InvalidRequest.
+    if (error instanceof InvalidRequest) {
+      return json({ error: error.message }, 400);
+    }
+    console.error("kukuroo: send failed:", error);
+    return json({ error: error instanceof Error ? error.message : String(error) }, 503);
   }
 }

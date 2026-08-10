@@ -12,6 +12,8 @@
  * So every check in this file exists because its absence is invisible.
  */
 
+import { InvalidRequest } from "./errors.ts";
+
 /** The complete set of members WebKit's parser reads inside `notification`. */
 export interface DeclarativeNotification {
   /** Required. */
@@ -64,15 +66,37 @@ function assertAbsoluteUrl(value: string, field: string): void {
   try {
     parsed = new URL(value);
   } catch {
-    throw new Error(
+    throw new InvalidRequest(
       `notification.${field} must be an absolute URL. WebKit constructs it with a ` +
         `single-argument URL() and no base, so a relative path fails validation and ` +
         `discards the entire declarative payload. Got: ${JSON.stringify(value)}`,
     );
   }
   if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
-    throw new Error(`notification.${field} must be http(s); got ${parsed.protocol}`);
+    throw new InvalidRequest(`notification.${field} must be http(s); got ${parsed.protocol}`);
   }
+}
+
+/**
+ * The type checks the cast at the entry point cannot make.
+ *
+ * `options` arrives from `await request.json()` as whatever the sender wrote,
+ * and the `as SendOptions` at the route is a compile-time claim about runtime
+ * data. WebKit discards the whole declarative payload when any member has the
+ * wrong type, so a numeric `body` is not a smaller mistake than a missing
+ * title: both display nothing and both return 201.
+ */
+function assertType(
+  value: unknown,
+  expected: "string" | "boolean",
+  field: string,
+): void {
+  if (value === undefined || typeof value === expected) return;
+  throw new InvalidRequest(
+    `${field} must be a ${expected}; got ${Array.isArray(value) ? "array" : typeof value}. ` +
+      `WebKit discards the entire declarative payload on a type mismatch, so the ` +
+      `notification would be accepted by the push service and displayed by nobody.`,
+  );
 }
 
 /**
@@ -107,11 +131,20 @@ export function buildDeclarativePayload(
   const { notification, appBadge, mutable } = options;
 
   if (typeof notification?.title !== "string" || notification.title.length === 0) {
-    throw new Error("notification.title is required; the message is rejected without it");
+    throw new InvalidRequest("notification.title is required; the message is rejected without it");
   }
   if (typeof notification.navigate !== "string" || notification.navigate.length === 0) {
-    throw new Error("notification.navigate is required; the message is rejected without it");
+    throw new InvalidRequest(
+      "notification.navigate is required; the message is rejected without it",
+    );
   }
+
+  assertType(notification.body, "string", "notification.body");
+  assertType(notification.tag, "string", "notification.tag");
+  assertType(notification.icon, "string", "notification.icon");
+  assertType(notification.lang, "string", "notification.lang");
+  assertType(notification.silent, "boolean", "notification.silent");
+  assertType(mutable, "boolean", "mutable");
 
   assertAbsoluteUrl(notification.navigate, "navigate");
   if (notification.icon !== undefined) {
@@ -119,22 +152,38 @@ export function buildDeclarativePayload(
   }
 
   if (policy.navigateOrigin !== undefined) {
-    const target = new URL(notification.navigate).origin;
-    if (target !== policy.navigateOrigin) {
+    // Normalised the same way KUKUROO_ALLOWED_ORIGINS is, and for the same
+    // reason: this is an operator-supplied string, and a trailing slash is
+    // exactly what a browser address bar hands you. Comparing it raw makes that
+    // one keystroke reject every notification the deployment will ever send.
+    // A malformed value is the operator's fault rather than the caller's, so it
+    // is not an InvalidRequest and must not be reported to the sender as one.
+    let allowed: string;
+    try {
+      allowed = new URL(policy.navigateOrigin).origin;
+    } catch {
       throw new Error(
+        `KUKUROO_NAVIGATE_ORIGIN is ${JSON.stringify(policy.navigateOrigin)}, which is not ` +
+          `an origin (expected e.g. "https://push.example.com"). Every send is rejected ` +
+          `until it is fixed or removed.`,
+      );
+    }
+    const target = new URL(notification.navigate).origin;
+    if (target !== allowed) {
+      throw new InvalidRequest(
         `notification.navigate points at ${target}, but this deployment restricts it to ` +
-          `${policy.navigateOrigin}. Tapping a notification that leaves the origin ejects ` +
+          `${allowed}. Tapping a notification that leaves the origin ejects ` +
           `the user out of the installed web app into a browser tab.`,
       );
     }
   }
   if (notification.dir !== undefined && !["auto", "ltr", "rtl"].includes(notification.dir)) {
-    throw new Error(`notification.dir must be auto, ltr, or rtl; got ${notification.dir}`);
+    throw new InvalidRequest(`notification.dir must be auto, ltr, or rtl; got ${notification.dir}`);
   }
 
   const strays = IGNORED_BY_WEBKIT.filter((f) => f in notification);
   if (strays.length > 0) {
-    throw new Error(
+    throw new InvalidRequest(
       `notification carries ${strays.join(", ")}, which WebKit does not implement and ` +
         `silently ignores. Remove them so the payload says what it does.`,
     );
@@ -156,7 +205,7 @@ export function buildDeclarativePayload(
 
   if (appBadge !== undefined) {
     if (!Number.isInteger(appBadge) || appBadge < 0) {
-      throw new Error(`app_badge must be a non-negative integer; got ${appBadge}`);
+      throw new InvalidRequest(`app_badge must be a non-negative integer; got ${appBadge}`);
     }
     payload.app_badge = appBadge; // 26.0+
     inner.app_badge = appBadge; // 18.4-18.6
@@ -166,7 +215,7 @@ export function buildDeclarativePayload(
   const json = JSON.stringify(payload);
   const size = new TextEncoder().encode(json).length;
   if (size > PAYLOAD_BUDGET_BYTES) {
-    throw new Error(
+    throw new InvalidRequest(
       `payload is ${size} bytes, over the ~${PAYLOAD_BUDGET_BYTES}-byte budget. ` +
         `An oversize message is not rejected by the push service; it is accepted and ` +
         `never delivered. Failing here instead.`,
