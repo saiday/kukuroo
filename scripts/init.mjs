@@ -7,7 +7,7 @@
 // The questions between them decide whether this deployment is a personal one.
 // They are asked here, once, rather than left as options nobody discovers: an
 // invite gate added after a stranger has enrolled is not the same thing as one
-// that was there first, and an enrolment page is either the reason the Worker
+// that was there first, and an enrollment page is either the reason the Worker
 // exists or a route that should never have been mounted.
 //
 // This exists because a Worker Secret is write-only. `wrangler secret list`
@@ -34,7 +34,7 @@ import { webcrypto as crypto } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createInterface } from "node:readline/promises";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -45,11 +45,11 @@ import {
   workerSource,
   wranglerSource,
 } from "./template.mjs";
-import { Cancelled, ask, supported, withScreen, wrap } from "./tui.mjs";
+import { BACK, Cancelled, ask, columns, supported, withScreen, wrap } from "./tui.mjs";
 
 // Where the credentials file goes and where wrangler runs. It is the current
 // directory for every command except a scaffolded init, which moves both into
-// the project it just created, so that `wrangler secret put` reads that
+// the project it just created, so that the `wrangler secret` commands read that
 // project's config and the credentials land beside the Worker they belong to.
 let workDir = process.cwd();
 const credentialsPath = () => resolve(workDir, "kukuroo.credentials.json");
@@ -97,7 +97,7 @@ const randomToken = () => b64url(crypto.getRandomValues(new Uint8Array(32)));
  * characters that argue with each other in a sans-serif font. Crockford's
  * alphabet minus the vowels, which also means it cannot accidentally spell
  * anything. 10 characters of a 27-symbol alphabet is a little over 47 bits,
- * which is far more than enough for a code that gates one manual enrolment.
+ * which is far more than enough for a code that gates one manual enrollment.
  */
 const INVITE_ALPHABET = "23456789bcdfghjkmnpqrstvwxyz";
 const randomInviteCode = () =>
@@ -136,6 +136,9 @@ function wrangler(args, { stdin, captureStderr = false } = {}) {
  * stops when it is absent, which is the safe direction to fail in. A false stop
  * costs one `wrangler login` and prints what wrangler actually said; a false pass
  * costs an unrecoverable key.
+ *
+ * Returns which account it found, for the screens to name, or null if wrangler's
+ * answer did not contain one. See whoAmI.
  */
 function assertAuthenticated() {
   let output;
@@ -145,7 +148,7 @@ function assertAuthenticated() {
     output = String(error.stdout ?? "") + String(error.stderr ?? "");
   }
 
-  if (/logged in|account id|api token/i.test(output)) return;
+  if (/logged in|account id|api token/i.test(output)) return whoAmI(output);
 
   die(
     "Not logged in to Cloudflare, so stopping before anything is generated.\n\n" +
@@ -157,6 +160,39 @@ function assertAuthenticated() {
       (output.trim() || "(nothing)"),
   );
 }
+
+/**
+ * Which Cloudflare account this is about to use, as a phrase to print.
+ *
+ * Best effort by design: this decorates the screens and gates nothing, so
+ * anything unrecognised becomes null and the line is simply left out. wrangler's
+ * wording and the shape of its table are not a contract, and a wrong guess here
+ * would be worse than no line at all, because the whole point of printing it is
+ * that somebody is checking it.
+ *
+ * More than one account on the login is the case worth being careful about.
+ * wrangler does not pick one -- it stops and asks for CLOUDFLARE_ACCOUNT_ID -- so
+ * naming the first row would name the wrong account as confidently as the right
+ * one. It says how many there are instead.
+ */
+function whoAmI(output) {
+  // One row per account the login can reach: | Some Account | 0123..cdef |, in
+  // box-drawing pipes. The header row carries no 32-hex id and so cannot match.
+  const names = [...output.matchAll(/│\s*(\S[^│]*?)\s*│\s*[0-9a-f]{32}\s*│/gi)].map((m) => m[1]);
+  const found = output.match(/associated with the email\s+([^\s,]+@[^\s,]+)/i);
+  const email = found === null ? null : found[1].replace(/\.+$/, "");
+
+  if (names.length > 1) return `${names.length} accounts on this login, so wrangler will ask which`;
+  if (names.length === 0) return email;
+  // The account name is very often the email with "'s Account" on the end, and
+  // printing both then says the same thing twice.
+  const name = names[0];
+  if (email === null || name.toLowerCase().includes(email.toLowerCase())) return name;
+  return `${name} (${email})`;
+}
+
+/** The one standing fact every screen carries: whose Cloudflare account this is. */
+const accountLine = (account) => (account === null ? "" : `Cloudflare account: ${account}`);
 
 /**
  * Deploy, and hand back what wrangler printed.
@@ -200,7 +236,7 @@ function workersDevUrlFrom(output) {
 /**
  * Which secrets the Worker already holds, or null if the Worker does not exist
  * yet. This is the guard that makes the script safe to run twice: `wrangler
- * secret put` overwrites without asking, and overwriting KUKUROO_VAPID_PRIVATE
+ * secret bulk` overwrites without asking, and overwriting KUKUROO_VAPID_PRIVATE
  * destroys every enrolled device with no error anywhere.
  *
  * `wrangler secret list` does *not* return an empty array for a Worker that has
@@ -210,7 +246,7 @@ function workersDevUrlFrom(output) {
  * really exists for. A Worker that does not exist holds no secrets; that is not
  * an error, it is the answer.
  *
- * `secret put` creates a draft Worker on demand, so setup legitimately runs
+ * `secret bulk` creates a draft Worker on demand, so setup legitimately runs
  * before the first deploy.
  */
 function existingSecretNames() {
@@ -293,7 +329,7 @@ function refuseVapidRotation() {
       "keypair does not invalidate them visibly; it just stops matching, and every send\n" +
       "afterwards is accepted by the push service and delivered to nobody.\n\n" +
       "If you have genuinely lost the private key, the only honest path is to generate a\n" +
-      "new one and re-enrol every device by hand. Delete kukuroo.credentials.json and the\n" +
+      "new one and re-enroll every device by hand. Delete kukuroo.credentials.json and the\n" +
       "KUKUROO_VAPID_PRIVATE secret first, so this script knows you meant it.",
   );
 }
@@ -319,26 +355,40 @@ async function rotate(what) {
   putSecret(SECRET_NAMES[field], value);
   writeCredentials(credentials);
 
-  console.log(`\nRotated ${what}. Safe: nothing is bound to it, and no device re-enrols.`);
+  console.log(`\nRotated ${what}. Safe: nothing is bound to it, and no device re-enrolls.`);
   if (what === "send-token") {
     console.log("Update whatever sends notifications; it will get 401 until you do.");
   }
 }
 
 /**
- * Upload all three secrets, and say something useful if it goes wrong partway.
+ * Upload all three secrets, and say something useful if it goes wrong.
+ *
+ * One `secret bulk` rather than three `secret put`s, because every secret write
+ * is a new version of the Worker and three of them make a fresh deployment look
+ * like something went wrong five times. Bulk is a single merge-patch: the three
+ * named here are written, anything else the Worker holds is left alone, and it
+ * creates the draft Worker on demand exactly as `secret put` does, so this is
+ * still the first thing a first-time setup can run.
  *
  * The local file is already on disk before this runs, so a failure here is
  * recoverable: nothing has been lost, and `--resume` finishes the job.
  */
 function uploadSecrets(credentials) {
+  const bundle = {
+    [SECRET_NAMES.vapidPrivateKey]: credentials.vapidPrivateKey,
+    [SECRET_NAMES.sendToken]: credentials.sendToken,
+    [SECRET_NAMES.inviteCode]: credentials.inviteCode,
+  };
   try {
-    putSecret(SECRET_NAMES.vapidPrivateKey, credentials.vapidPrivateKey);
-    putSecret(SECRET_NAMES.sendToken, credentials.sendToken);
-    putSecret(SECRET_NAMES.inviteCode, credentials.inviteCode);
+    // On stdin, never as a file: writing three secrets to a temp path to hand
+    // them to a subprocess is a copy nobody asked for and nothing deletes on a
+    // crash.
+    wrangler(["secret", "bulk"], { stdin: JSON.stringify(bundle) });
+    for (const name of Object.keys(bundle)) console.log(`  set ${name}`);
   } catch (error) {
     die(
-      `Upload failed partway: ${error instanceof Error ? error.message : String(error)}\n\n` +
+      `Upload failed: ${error instanceof Error ? error.message : String(error)}\n\n` +
         `Your keys are safe. They were written to ${credentialsPath()} before any\n` +
         "upload started, which is the whole reason that ordering exists.\n\n" +
         "Fix whatever broke, then finish the job from that directory:\n" +
@@ -349,14 +399,16 @@ function uploadSecrets(credentials) {
 
 /**
  * Re-upload from the local file. Idempotent: putting the same VAPID key back is
- * not a rotation, so nothing re-enrols.
+ * not a rotation, so nothing re-enrolls.
  */
-function resumeSetup() {
+function resumeSetup(account) {
   if (!existsSync(credentialsPath())) {
     die(`No ${credentialsPath()} to resume from. Run \`npx kukuroo init\`.`);
   }
   const credentials = JSON.parse(readFileSync(credentialsPath(), "utf8"));
-  console.log(`\nResuming from ${credentialsPath()}.\n`);
+  console.log(`\nResuming from ${credentialsPath()}.`);
+  if (account !== null) console.log(`\n  ${accountLine(account)}`);
+  console.log("");
   uploadSecrets(credentials);
   console.log(`\nDone. Your invite code is:\n\n     ${credentials.inviteCode}\n`);
 }
@@ -384,29 +436,38 @@ function assertHostname(answer) {
 
 const WORKERS_DEV = { kind: "workers-dev", url: null };
 
+// `label` is what the answer is called on the review screen, where four of them
+// are read side by side and the question they came from is no longer on screen.
 const QUESTIONS = {
   frontEnd: {
+    label: "Front end",
     question: "Use the bundled front end?",
     body:
-      "It generates the page a phone opens in Safari, adds to the Home Screen, and " +
-      "enrols from. One file, no build step. Sets `standalone` on mountKukuroo().",
+      "Something has to serve the page a phone opens in Safari, adds to the Home Screen, " +
+      "and enrolls from. Kukuroo can be that page, or it can stay an API and let a page of " +
+      "yours do it. Sets `standalone` on mountKukuroo().",
     choices: [
       {
         label: "Yes, serve the bundled page",
-        hint: "The out-of-box setup. Nothing to build.",
+        hint:
+          "You write no HTML and run no bundler. The Worker returns the page itself, so " +
+          "deploying it is the whole front end.",
         value: true,
       },
       {
         label: "No, I will build my own UI",
-        hint: `Against the API: ${README_SECTIONS.api}`,
+        hint:
+          "Your page does two calls: read the VAPID key, post the subscription. " +
+          README_SECTIONS.api,
         value: false,
       },
     ],
     default: 0,
-    summary: (v) => (v ? "bundled front end" : "no bundled front end"),
+    summary: (v) => (v ? "the bundled enrollment page" : "your own UI, elsewhere"),
   },
 
   shape: {
+    label: "Routes",
     question: "Where do the push routes live?",
     body: "Nothing is scaffolded for a mounted deployment: it is three lines inside a fetch handler you already have.",
     choices: [
@@ -423,15 +484,16 @@ const QUESTIONS = {
       },
     ],
     default: 0,
-    summary: (v) => v,
+    summary: (v) => (v === "standalone" ? "a Worker of its own" : "mounted into a Worker you run"),
   },
 
   origin: {
-    question: "Where will devices enrol?",
+    label: "Enroll on",
+    question: "Where will devices enroll?",
     body:
       "This is the one answer worth getting right first. Moving it later does not stop " +
       "delivery to devices already enrolled, but it does mean you can no longer read or " +
-      "repair their subscriptions, so every device enrols again by hand.",
+      "repair their subscriptions, so every device enrolls again by hand.",
     choices: [
       {
         label: "A workers.dev address",
@@ -446,18 +508,20 @@ const QUESTIONS = {
       },
     ],
     default: 0,
-    summary: (v) => (v.kind === "domain" ? v.hostname : "workers.dev"),
+    summary: (v) =>
+      v.kind === "domain" ? v.hostname : "a workers.dev address, named by the first deploy",
   },
 
   requireInvite: {
-    question: "Require an invite code to enrol a device?",
+    label: "Enrollment",
+    question: "Require an invite code to enroll a device?",
     body:
       "The code is generated either way, so changing your mind later is one word and a " +
-      "deploy, and nothing re-enrols. Sets `requireInvite` on mountKukuroo().",
+      "deploy, and nothing re-enrolls. Sets `requireInvite` on mountKukuroo().",
     choices: [
       {
         label: "No, notifications are for whoever turns up",
-        hint: "Anyone who reaches the URL can enrol a device.",
+        hint: "Anyone who reaches the URL can enroll a device.",
         value: false,
       },
       {
@@ -467,7 +531,7 @@ const QUESTIONS = {
       },
     ],
     default: 0,
-    summary: (v) => (v ? "invite required" : "open enrolment"),
+    summary: (v) => (v ? "an invite code is required" : "open to anyone with the URL"),
   },
 };
 
@@ -475,8 +539,9 @@ const QUESTIONS = {
 const HOSTNAME = {
   question: "Which hostname?",
   body:
-    "It has to be a zone already on Cloudflare in this account, with no existing CNAME " +
-    "record on that name. Just the hostname: no scheme, no path, no port.",
+    "Something like push.example.com, or notify.yourdomain.com. It has to be a zone " +
+    "already on Cloudflare in this account, with no existing CNAME record on that name. " +
+    "Just the hostname: no scheme, no path, no port.",
   placeholder: "push.example.com",
   validate: assertHostname,
 };
@@ -494,7 +559,7 @@ function nextQuestion(answers) {
 
   if (answers.frontEnd === undefined) return "frontEnd";
   if (answers.shape === undefined) return "shape";
-  // Standalone only. A mounted deployment enrols on its host Worker's origin,
+  // Standalone only. A mounted deployment enrolls on its host Worker's origin,
   // which exists already and is not a question we get to ask.
   if (answers.shape === "standalone" && answers.origin === undefined) return "origin";
   if (answers.requireInvite === undefined) return "requireInvite";
@@ -520,32 +585,141 @@ function totalQuestions(answers, answered) {
   return total;
 }
 
-/** The questions, full-screen, one at a time. */
-async function askOnScreen(answers) {
-  let asked = 0;
+/** The answered questions, in asking order, as the review screen lists them. */
+function answerRows(answers) {
+  return ["frontEnd", "shape", "origin", "requireInvite"]
+    .filter((key) => answers[key] !== undefined)
+    .map((key) => [QUESTIONS[key].label, QUESTIONS[key].summary(answers[key])]);
+}
+
+/**
+ * The same table for the scrollback, with the account at the top of it.
+ *
+ * The full-screen review keeps the account on its standing line instead, where it
+ * has been since the first question. Printed output has no standing line, so the
+ * account has to be a row or it is nowhere.
+ */
+function reviewRows(answers, account) {
+  const rows = answerRows(answers);
+  return account === null || account === undefined ? rows : [["Cloudflare", account], ...rows];
+}
+
+/**
+ * Every answer on one page, and a last chance to disagree with it.
+ *
+ * It is here because each question before it is quick to answer and slow to
+ * undo, and because the operator has been shown them one at a time and has never
+ * seen them together. Confirming a deployment nobody has read is not
+ * confirmation. It is also the only screen that says out loud what is about to
+ * happen to a live Cloudflare account.
+ */
+function confirmScreen(answers, { dir, shouldDeploy, canGoBack, account }) {
+  const choices = [
+    {
+      label: "Yes, set it up",
+      hint: shouldDeploy
+        ? `Writes ./${dir}, installs the secrets, and deploys.`
+        : `Writes ./${dir} and installs the secrets. You deploy when you are ready.`,
+      value: true,
+    },
+  ];
+  if (canGoBack) {
+    choices.push({
+      label: "No, change an answer",
+      hint: "Steps back through the questions, one at a time.",
+      value: BACK,
+    });
+  }
+
+  return ask({
+    question: "Ready?",
+    body:
+      "This generates a VAPID keypair that can never be rotated, writes it to a file " +
+      `only you can read, and installs it on ${
+        // Only "named above" if there is in fact a name above: the account line
+        // is left out when wrangler's answer did not contain one to read.
+        account === null ? "Cloudflare" : "the Cloudflare account named above"
+      } along with a send token and an invite code${
+        shouldDeploy ? ", then deploys the Worker" : ""
+      }. Everything above can be changed afterwards except where devices enroll.`,
+    status: accountLine(account),
+    facts: answerRows(answers),
+    choices,
+    default: 0,
+    step: null,
+    total: null,
+    // The same key that steps back from a question steps back from the review.
+    // The choice above says so in words for anyone who did not think to try it.
+    canGoBack,
+  });
+}
+
+/**
+ * The questions, full-screen, one at a time, and then all of them at once.
+ *
+ * The loop walks a history of whole snapshots rather than a list of answered
+ * keys, because going back has to undo more than the last answer: `nextQuestion`
+ * settles the shape the moment the front end is answered yes, so stepping back
+ * past that question has to unsettle it too. Restoring the object entire is the
+ * only version of that with no second list of consequences to keep in step.
+ */
+async function askOnScreen(initial, plan) {
   return withScreen(async () => {
-    for (let key = nextQuestion(answers); key !== null; key = nextQuestion(answers)) {
-      const spec = QUESTIONS[key];
-      // `asked` counts the ones already answered, so the question on screen is the
-      // next one and the total is what remains on top of it. Counting the current
-      // question as answered would have it counted twice, once in each term.
-      const position = { step: asked + 1, total: totalQuestions(answers, asked) };
-      asked += 1;
-      let value = await ask({ ...spec, ...position });
+    let answers = { ...initial };
+    // One entry per answered question: what `answers` looked like before it.
+    const history = [];
+    // The same on every screen, first to last, because the account is the one
+    // thing here nobody chose and everybody assumes. It is worth seeing before
+    // the first answer, since it is what the whole run is about to write to.
+    const status = accountLine(plan.account);
+
+    for (;;) {
+      const key = nextQuestion(answers);
+
+      if (key === null) {
+        const go = await confirmScreen(answers, {
+          ...plan,
+          canGoBack: history.length > 0,
+        });
+        if (go !== BACK) return answers;
+        answers = history.pop();
+        continue;
+      }
+
+      // `history.length` counts the questions already answered, so the one on
+      // screen is the next and the total is what remains on top of it. Counting
+      // the current question as answered would count it twice, once in each term.
+      const position = {
+        step: history.length + 1,
+        total: totalQuestions(answers, history.length),
+      };
+      const before = { ...answers };
+
+      let value = await ask({
+        ...QUESTIONS[key],
+        ...position,
+        status,
+        canGoBack: history.length > 0,
+      });
+      if (value === BACK) {
+        answers = history.pop();
+        continue;
+      }
 
       if (value === "ask-hostname") {
+        // Always back-able, whatever the history holds: the question behind this
+        // one is the origin question that just branched to it, and that one is
+        // on screen again the moment this loop turns over.
         const hostname = await ask({
-          ...HOSTNAME,
-          ...position,
-          value: "",
-          validate: HOSTNAME.validate,
+          ...HOSTNAME, ...position, status, value: "", canGoBack: true,
         });
+        if (hostname === BACK) continue;
         value = { kind: "domain", hostname: hostname.toLowerCase() };
       }
 
+      history.push(before);
       answers[key] = value;
     }
-    return answers;
   });
 }
 
@@ -553,7 +727,8 @@ async function askOnScreen(answers) {
  * The same questions down a terminal that cannot be taken over: stdout redirected
  * to a file, an editor's dumb shell, a CI job with a TTY on stdin only.
  */
-async function askOnLines(answers) {
+async function askOnLines(answers, plan) {
+  const measure = columns();
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   const read = async (prompt) => {
     try {
@@ -567,14 +742,18 @@ async function askOnLines(answers) {
   };
 
   try {
+    // Said once here and again at the confirm, which is where the full-screen
+    // asker's standing account line has to land in a terminal that only scrolls.
+    if (plan.account !== null) console.log(`\n  ${accountLine(plan.account)}`);
+
     for (let key = nextQuestion(answers); key !== null; key = nextQuestion(answers)) {
       const spec = QUESTIONS[key];
       console.log("");
-      for (const line of wrap(spec.body, 76)) console.log(`  ${line}`);
+      for (const line of wrap(spec.body, measure - 4)) console.log(`  ${line}`);
       console.log("");
       spec.choices.forEach((choice, i) => {
         console.log(`  ${i + 1}) ${choice.label}`);
-        for (const line of wrap(choice.hint, 72)) console.log(`     ${line}`);
+        for (const line of wrap(choice.hint, measure - 8)) console.log(`     ${line}`);
       });
       console.log("");
 
@@ -607,6 +786,26 @@ async function askOnLines(answers) {
 
       answers[key] = value;
     }
+
+    // The same last look the full-screen asker gives, minus the stepping back:
+    // a terminal that cannot be redrawn cannot take a screen away again, and
+    // scrolling up to the question you want is what the scrollback is for.
+    console.log("\nReady?\n");
+    console.log(facts(reviewRows(answers, plan.account)));
+    console.log(
+      `\nThis generates a VAPID keypair that can never be rotated, writes it to a file\n` +
+        `only you can read, and installs it on Cloudflare${
+          plan.shouldDeploy ? `, then deploys ./${plan.dir}` : ""
+        }.`,
+    );
+    for (;;) {
+      const answer = (await read("\nGo ahead? [Y/n] ")).toLowerCase();
+      if (answer === "" || answer === "y" || answer === "yes") break;
+      if (answer === "n" || answer === "no") {
+        die("Stopped. Nothing was created and no key was generated.");
+      }
+      console.log("  y or n.");
+    }
   } finally {
     rl.close();
   }
@@ -618,7 +817,7 @@ async function askOnLines(answers) {
  * watching. Anything already given on the command line is never asked about,
  * which is what makes the flag form and the wizard the same flow rather than two.
  */
-async function askAnswers(flags) {
+async function askAnswers(flags, plan) {
   const answers = {
     frontEnd: flags.frontEnd,
     shape: flags.shape,
@@ -627,6 +826,9 @@ async function askAnswers(flags) {
   };
 
   if (!process.stdin.isTTY || flags.yes) {
+    // Nobody is going to be asked anything, so this is the only chance to say
+    // which account the run is about to write to.
+    if (plan.account !== null) console.log(`\n  ${accountLine(plan.account)}\n`);
     for (let key = nextQuestion(answers); key !== null; key = nextQuestion(answers)) {
       answers[key] = QUESTIONS[key].choices[QUESTIONS[key].default].value;
       console.log(`  ${QUESTIONS[key].summary(answers[key])} (default)`);
@@ -636,7 +838,7 @@ async function askAnswers(flags) {
 
   let asked;
   try {
-    asked = supported() ? await askOnScreen(answers) : await askOnLines(answers);
+    asked = supported() ? await askOnScreen(answers, plan) : await askOnLines(answers, plan);
   } catch (error) {
     // Ctrl+C during the questions. The screen has already been given back by
     // withScreen's finally, so this only has to say why the run stopped.
@@ -650,10 +852,7 @@ async function askAnswers(flags) {
   // are reprinted here, on the scrollback that survives. They are the shape of the
   // deployment, and the operator is about to read a summary that assumes them.
   console.log("\nAnswers:\n");
-  for (const key of ["frontEnd", "shape", "origin", "requireInvite"]) {
-    if (asked[key] === undefined) continue;
-    console.log(`  ${QUESTIONS[key].summary(asked[key])}`);
-  }
+  console.log(facts(reviewRows(asked, plan.account)));
 
   return asked;
 }
@@ -674,11 +873,39 @@ function workerName(from) {
  * running from a clone or from `npx github:saiday/kukuroo`, the project it
  * writes points back at the same place rather than at a registry version that
  * may not be published yet, and the very first `npm install` succeeds.
+ *
+ * `--link` is the third answer, and it exists because of a trap. Running this
+ * script out of a checkout makes the *wizard* local, but the Worker it writes
+ * still fetches the *library* from GitHub, so a change to src/ can be edited,
+ * scaffolded, deployed, and opened on a phone without ever being the code that
+ * ran. Linking points the project at the checkout that wrote it, and from then
+ * on every deploy carries the working tree.
  */
-function dependencySpec() {
+function dependencySpec(link) {
+  if (link) return `file:${PACKAGE_ROOT}`;
   if (existsSync(join(PACKAGE_ROOT, ".git"))) return "github:saiday/kukuroo";
   const { version } = JSON.parse(readFileSync(join(PACKAGE_ROOT, "package.json"), "utf8"));
   return `^${version}`;
+}
+
+/**
+ * Refuse to link something that is not a checkout.
+ *
+ * `npx kukuroo init --link` would otherwise point the project at an npm cache
+ * directory: a path that resolves today, is not under anybody's editor, and
+ * disappears when the cache is cleaned. Failing here costs one flag; not failing
+ * costs somebody an afternoon wondering why their edits do nothing.
+ */
+function assertLinkable() {
+  if (PACKAGE_ROOT.split(sep).includes("node_modules") || !existsSync(join(PACKAGE_ROOT, ".git"))) {
+    die(
+      "--link needs a checkout to link to, and this is running from an installed copy:\n\n" +
+        `  ${PACKAGE_ROOT}\n\n` +
+        "Clone the repository and run its scripts/init.mjs directly:\n\n" +
+        "  git clone https://github.com/saiday/kukuroo\n" +
+        "  node kukuroo/scripts/init.mjs init my-push --link",
+    );
+  }
 }
 
 /**
@@ -698,10 +925,10 @@ function assertWritableTarget(dir) {
   return target;
 }
 
-function scaffold(dir, answers) {
+function scaffold(dir, answers, { link = false } = {}) {
   const target = assertWritableTarget(dir);
   const name = workerName(basename(target));
-  const spec = dependencySpec();
+  const spec = dependencySpec(link);
 
   mkdirSync(join(target, "src"), { recursive: true });
   copyFileSync(join(TEMPLATE_DIR, "tsconfig.json"), join(target, "tsconfig.json"));
@@ -710,7 +937,7 @@ function scaffold(dir, answers) {
   // follows the directory rather than staying "kukuroo" for everyone who ever runs
   // this. It is also why the wizard does not ask for a name: `init my-push` has
   // already answered that.
-  const wranglerConfig = wranglerSource({ name, origin: answers.origin });
+  const wranglerConfig = wranglerSource({ name, origin: answers.origin, frontEnd: answers.frontEnd });
   const pkg = readFileSync(join(TEMPLATE_DIR, "package.json"), "utf8")
     .replace(/^(\s*"name":\s*)"[^"]*"/m, `$1"${name}"`)
     .replace(/^(\s*"kukuroo":\s*)"[^"]*"/m, `$1"${spec}"`);
@@ -780,7 +1007,7 @@ async function provisionSecrets() {
 
   const deployed = existingSecretNames();
   if (deployed === null) {
-    console.log("No Worker deployed yet. `wrangler secret put` will create a draft one.");
+    console.log("No Worker deployed yet. `wrangler secret bulk` will create a draft one.");
   }
 
   const present = (deployed ?? []).filter((n) => Object.values(SECRET_NAMES).includes(n));
@@ -833,8 +1060,20 @@ function backupNote(where, indent = "   ") {
   ].join("\n" + indent);
 }
 
+/**
+ * An aligned block of values somebody is about to read off the screen and use.
+ *
+ * Aligned because they are read one at a time, by eye, while looking at a phone
+ * in the other hand, and a ragged left edge on the values is one more thing to
+ * track across a line.
+ */
+function facts(rows) {
+  const width = Math.max(...rows.map(([label]) => label.length));
+  return rows.map(([label, value]) => `     ${label.padEnd(width)}   ${value}`).join("\n");
+}
+
 /** The rest of the summary: the two values a sender and a phone need. */
-function printCredentialsNote(credentials, { requireInvite }) {
+function printCredentialsNote({ requireInvite }) {
   console.log(`
 The send token is in the credentials file under "sendToken". Whatever sends
 notifications reads it from there, or from a copy you place yourself:
@@ -843,93 +1082,82 @@ notifications reads it from there, or from a copy you place yourself:
      chmod 600 ~/.kukuroo-send-token
 `);
 
+  // Nothing here for an open deployment. The code is still generated and
+  // installed, so closing the gate later stays one word and a deploy, but
+  // somebody who has just chosen not to have an invite code does not need a
+  // paragraph about the invite code they do not have. It is in the credentials
+  // file, and the README covers turning it on.
   if (requireInvite) {
-    console.log(`Your invite code, for the enrolment page:
-
-     ${credentials.inviteCode}
-`);
-  } else {
-    console.log(`Enrolment is open: anyone who reaches your enrolment page can add their own
-device, and will then receive everything you send. That is what you asked for.
-To close it later, set requireInvite: true and deploy. The code below is already
-generated and installed, so nothing re-enrols:
-
-     ${credentials.inviteCode}
+    console.log(`The invite code is in the same file under "inviteCode", and is printed above.
 `);
   }
 
   console.log(`Of the four values, only the VAPID keypair is permanent. The send token and the
 invite code can be rotated any time with \`npx kukuroo rotate\`, and nothing
-re-enrols.`);
+re-enrolls.`);
 }
 
 /**
- * Deploy, and settle the navigate origin for a workers.dev deployment.
+ * Deploy, once, and say where it landed.
  *
- * A custom domain knows its origin before the deploy, so it deploys once. A
- * workers.dev address is `<worker>.<account-subdomain>.workers.dev` and no
+ * A custom domain knows its origin before the deploy, so there is nothing to
+ * read. A workers.dev address is <worker>.<account-subdomain>.workers.dev, and no
  * wrangler command reports the account subdomain, so the only way to learn it is
- * to deploy and read what wrangler printed. Hence two deploys: the first names the
- * origin, the second is the one that enforces it.
+ * to deploy and read what wrangler printed.
  *
- * Returns the origin that ended up live, or null if it could not be determined.
+ * That address used to be written back into wrangler.jsonc as
+ * KUKUROO_NAVIGATE_ORIGIN and deployed a second time, which is why one setup left
+ * several versions behind. A standalone Worker now reads that origin off the
+ * request when it serves the enrollment page itself, so the address is needed only
+ * to print, and one deploy is the whole of it.
+ *
+ * Returns the origin that ended up live, or null if the output did not name one.
  */
-function deployStandalone(name, answers) {
+function deployStandalone(answers) {
   console.log("\nDeploying.\n");
   const output = deploy();
-
   if (answers.origin.kind === "domain") return originUrl(answers.origin);
-
-  const url = workersDevUrlFrom(output);
-  if (url === null) return null;
-
-  console.log(`\nThat origin is ${url}.`);
-  console.log("Writing it into wrangler.jsonc as KUKUROO_NAVIGATE_ORIGIN, then deploying again");
-  console.log("so notification clicks stay inside the installed web app.\n");
-
-  const settled = { kind: "workers-dev", url };
-  writeFileSync(resolve(workDir, "wrangler.jsonc"), wranglerSource({ name, origin: settled }));
-  deploy();
-  return url;
+  return workersDevUrlFrom(output);
 }
 
-async function standaloneSetup(dir, answers, { shouldDeploy }) {
-  const target = scaffold(dir, answers);
+async function standaloneSetup(dir, answers, { shouldDeploy, link }) {
+  const target = scaffold(dir, answers, { link });
   workDir = target;
   npmInstall(dir);
 
   const credentials = await provisionSecrets();
 
-  const name = workerName(basename(target));
-  const liveOrigin = shouldDeploy ? deployStandalone(name, answers) : null;
+  const liveOrigin = shouldDeploy ? deployStandalone(answers) : null;
 
   const steps = [backupNote(`${dir}/kukuroo.credentials.json`)];
 
-  // The deploy happened but wrangler's output did not name the origin, so the one
-  // value that has to be exactly right is still missing. Say so, rather than
-  // leaving an unenforced navigate origin to be discovered when a notification
-  // click drops someone into a browser tab.
+  // The deploy went through but wrangler's output did not name the address, so
+  // the operator has a live Worker and no idea where. Nothing is broken -- the
+  // Worker enforces its own origin off the request either way -- but a URL you
+  // cannot type is not much of an enrollment page.
   if (shouldDeploy && liveOrigin === null) {
     steps.push(
-      `Set KUKUROO_NAVIGATE_ORIGIN in ${dir}/wrangler.jsonc, and deploy again.
+      `Find your Worker's address.
 
    The deploy went through, but its output did not contain a workers.dev URL this
-   script could read, so it did not guess. Use the address wrangler printed above.
-   Until then the navigate origin is not enforced, and a notification pointing off
-   the origin ejects the reader into a browser tab.`,
+   script could read, so it did not guess one. It is in the Cloudflare dashboard
+   under Workers, or in the output above.`,
     );
   }
 
-  // Without our page, nothing can enrol until the origin serving the operator's
+  // Without our page, nothing can enroll until the origin serving the operator's
   // own UI is allowed to call subscribe from a browser. That is a step, not a
-  // footnote: skip it and the first enrolment fails in the console with a CORS
-  // error that names nothing. It goes before the deploy, because it is another
-  // line in the same file the deploy publishes.
+  // footnote: skip it and the first enrollment fails in the console with a CORS
+  // error that names nothing. Nor can the Worker infer the navigate origin for
+  // itself here, the way it can when the page is its own: the page is somebody
+  // else's, and the origin it is served from is the answer.
   if (!answers.frontEnd) {
     steps.push(
-      `In the same file, add the origin serving your enrolment UI to
-   KUKUROO_ALLOWED_ORIGINS. There is no enrolment page on this Worker, so until
-   that list has your site on it, no browser is allowed to call /push/subscribe.
+      `Name the origin serving your enrollment UI, in ${dir}/wrangler.jsonc.
+
+   It goes in KUKUROO_ALLOWED_ORIGINS, or no browser is allowed to call
+   /push/subscribe, and in KUKUROO_NAVIGATE_ORIGIN, or a notification is free to
+   navigate off it and eject the reader into a browser tab. Then deploy again.
    ${README_SECTIONS.ownUi}`,
     );
   }
@@ -938,54 +1166,57 @@ async function standaloneSetup(dir, answers, { shouldDeploy }) {
     steps.push(`Deploy it.
 
      cd ${dir}
-     npx wrangler deploy${
-       answers.origin.kind === "workers-dev"
-         ? `
-
-   Then set KUKUROO_NAVIGATE_ORIGIN in wrangler.jsonc to the workers.dev address
-   the deploy prints, and deploy once more. Without it, a notification pointing off
-   the origin ejects the reader into a browser tab.`
-         : ""
-     }`);
+     npx wrangler deploy`);
   }
 
   steps.push(
     answers.frontEnd
-      ? `Enrol your phone.
+      ? `Enroll your phone.
 
-   Open the origin in Safari, Add to Home Screen, open it from the icon, and allow
-   notifications. Enrolling from a Safari tab does not work; that is Apple's rule,
-   not ours.${
-     answers.requireInvite ? "\n   The page asks for the invite code, which is at the end of this output." : ""
-   }`
-      : `Enrol a device from your own page.
+   Open the enrollment page in Safari, Add to Home Screen, open it from the icon,
+   and allow notifications. Enrolling from a Safari tab does not work; that is
+   Apple's rule, not ours.`
+      : `Enroll a device from your own page.
 
    On iOS it has to be added to the Home Screen and opened from the icon first; a
    Safari tab cannot subscribe.`,
   );
 
   const origin = liveOrigin ?? "https://<your origin>";
+
+  // The origin, and directly under it the code somebody types into the page that
+  // origin serves. They are used together, within a minute of each other, on a
+  // phone; separating them by a screenful of prose only means scrolling back.
+  const headline = [["Origin", origin]];
+  if (answers.frontEnd) headline.push(["Enroll at", `${origin}/push/enroll`]);
+  if (answers.requireInvite) headline.push(["Invite code", credentials.inviteCode]);
+
   console.log(`
 ${
   shouldDeploy
-    ? `Done, and deployed.${liveOrigin === null ? "" : ` Your origin is ${liveOrigin}.`}`
+    ? "Done, and deployed."
     : `Done. ${dir} is a deployable Worker, and every secret is installed.`
 }
+
+${facts(headline)}
 
 ${["One", "Two", "Three", "Four"][steps.length - 1]} things left, in this order.
 
 ${steps.map((step, i) => `${i + 1}. ${step}`).join("\n\n")}
 
-That is setup. From then on, a notification is one request:
+That is setup. From then on, a notification is one request, and this one is
+ready to run: the token in it is the send token this setup just generated.
 
      curl -X POST ${origin}/push/send \\
-       -H "authorization: Bearer <the send token, below>" \\
+       -H "authorization: Bearer ${credentials.sendToken}" \\
        -H 'content-type: application/json' \\
        -d '{"notification":{"title":"hello","navigate":"${origin}/"}}'
 
+It answers {"delivered":0,...} until a device has enrolled, which is the honest
+answer and the reason the count is in the response at all.
 Everything else, in more detail: ${README_SECTIONS.standalone}`);
 
-  printCredentialsNote(credentials, answers);
+  printCredentialsNote(answers);
 }
 
 async function mountedSetup(answers, { dirGiven }) {
@@ -995,7 +1226,7 @@ async function mountedSetup(answers, { dirGiven }) {
   // Both are standalone's business. The host Worker's origin already exists, and
   // its deploy pipeline is not ours to drive.
   if (answers.origin !== undefined) {
-    console.log("Ignoring the origin: mounted enrols on your Worker's own origin.");
+    console.log("Ignoring the origin: mounted enrolls on your Worker's own origin.");
   }
   console.log(`
 Mounted, then. Your Worker already has an origin, so the routes belong on it and
@@ -1011,20 +1242,23 @@ that Worker's wrangler config, since that is what says which Worker they go to.`
   const credentials = await provisionSecrets();
   console.log(`
 Done. The secrets are installed on the Worker this directory deploys.
-
+${answers.requireInvite ? `\n${facts([["Invite code", credentials.inviteCode]])}\n` : ""}
 ${backupNote("kukuroo.credentials.json", "")}
 
 Then deploy your Worker as you always do, and the push routes are live on the
 origin you already own.`);
-  printCredentialsNote(credentials, answers);
+  printCredentialsNote(answers);
 }
 
 /** No questions, no scaffold: just the keys, here. The recovery path, and the mounted one. */
-async function secretsOnly() {
+async function secretsOnly(account) {
   console.log(`\nSecrets only, in ${workDir}.`);
+  if (account !== null) console.log(`\n  ${accountLine(account)}`);
   const credentials = await provisionSecrets();
-  console.log(`\nDone.\n\n${backupNote("kukuroo.credentials.json", "")}`);
-  printCredentialsNote(credentials, { requireInvite: true });
+  console.log(`\nDone.\n
+${facts([["Invite code", credentials.inviteCode]])}\n
+${backupNote("kukuroo.credentials.json", "")}`);
+  printCredentialsNote({ requireInvite: true });
 }
 
 const USAGE = `kukuroo <command>
@@ -1048,17 +1282,24 @@ Commands:
 
 Answers:
 
-  --front-end, --no-front-end   serve Kukuroo's bundled enrolment page
+  --front-end, --no-front-end   serve Kukuroo's bundled enrollment page
                                 (default: yes)
   --standalone, --mounted       a Worker of its own, or three lines inside one
                                 you already run (default: standalone; implied
                                 by --front-end)
-  --origin <hostname>           enrol devices on a domain you have on Cloudflare
-  --workers-dev                 enrol devices on a workers.dev address (default)
-  --invite, --no-invite         require the invite code to enrol (default: no)
+  --origin <hostname>           enroll devices on a domain you have on Cloudflare
+  --workers-dev                 enroll devices on a workers.dev address (default)
+  --invite, --no-invite         require the invite code to enroll (default: no)
   --yes                         take every default, ask nothing
   --deploy, --no-deploy         deploy a standalone Worker once it is set up
                                 (default: yes with a terminal, no without)
+
+Working on Kukuroo itself:
+
+  --link                        depend on the checkout this script came from
+                                instead of GitHub, so every deploy from the new
+                                project carries your working tree. Needs a
+                                checkout; see the error if it is not one.
 
 Only the VAPID keypair is permanent; there is no rotate for it.`;
 
@@ -1071,6 +1312,7 @@ function parseInitArgs(argv) {
     origin: undefined,
     deploy: undefined,
     yes: false,
+    link: false,
   };
   let dir;
   const setShape = (value, arg) => {
@@ -1111,6 +1353,7 @@ function parseInitArgs(argv) {
       case "--deploy": flags.deploy = true; break;
       case "--no-deploy": flags.deploy = false; break;
       case "--yes": case "-y": flags.yes = true; break;
+      case "--link": flags.link = true; break;
       default:
         if (arg.startsWith("-")) die(`Unknown option ${JSON.stringify(arg)}.\n\n${USAGE}`);
         if (dir !== undefined) die(`Two directories given: ${dir} and ${arg}.\n\n${USAGE}`);
@@ -1131,15 +1374,20 @@ if (argv.includes("--help") || argv.includes("-h")) {
 
 switch (command) {
   case "init": {
-    if (rest.includes("--resume")) { assertAuthenticated(); resumeSetup(); break; }
-    if (rest.includes("--secrets")) { assertAuthenticated(); await secretsOnly(); break; }
+    if (rest.includes("--resume")) { resumeSetup(assertAuthenticated()); break; }
+    if (rest.includes("--secrets")) { await secretsOnly(assertAuthenticated()); break; }
 
     const { dir, flags } = parseInitArgs(rest);
     if (dir !== undefined) assertWritableTarget(dir);
+    // Before anything else it could waste: a --link that cannot be honoured is a
+    // typo in the command that was just typed, not a problem to discover after
+    // four questions and a keypair.
+    if (flags.link) assertLinkable();
     // Before the questions, so nobody answers three of them and is then told to
     // log in. It costs a second and it is the only check here that prevents an
-    // unrecoverable half-finished setup.
-    assertAuthenticated();
+    // unrecoverable half-finished setup. It also settles which account every
+    // screen from here on names.
+    const account = assertAuthenticated();
 
     // Deploying to a live Cloudflare account is fine when someone is watching and
     // chose it. Doing it from a script that could not ask is a surprise, and the
@@ -1147,9 +1395,9 @@ switch (command) {
     // terminal means no deploy unless --deploy says otherwise.
     const shouldDeploy = flags.deploy ?? Boolean(process.stdin.isTTY);
 
-    const answers = await askAnswers(flags);
+    const answers = await askAnswers(flags, { dir: dir ?? "kukuroo", shouldDeploy, account });
     if (answers.shape === "standalone") {
-      await standaloneSetup(dir ?? "kukuroo", answers, { shouldDeploy });
+      await standaloneSetup(dir ?? "kukuroo", answers, { shouldDeploy, link: flags.link });
     } else await mountedSetup(answers, { dirGiven: dir !== undefined });
     break;
   }

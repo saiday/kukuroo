@@ -1,8 +1,8 @@
 /**
  * A standalone Kukuroo deployment: a notification sink and nothing else.
  *
- *   GET  /push/enroll      the enrolment page you add to your Home Screen
- *   GET  /push/public-key  the VAPID public key, for the enrolment page
+ *   GET  /push/enroll      the enrollment page you add to your Home Screen
+ *   GET  /push/public-key  the VAPID public key, for the enrollment page
  *   POST /push/subscribe   invite-gated
  *   POST /push/send        bearer-gated, encrypts and fans out
  *
@@ -12,12 +12,12 @@
 
 import { mountKukuroo, type KukurooEnv } from "kukuroo";
 
-// `standalone: true` is what serves the bundled enrolment page. Without it
+// `standalone: true` is what serves the bundled enrollment page. Without it
 // /push/enroll is not routed at all, on the assumption that the host has its own.
 //
 // `requireInvite: true` keeps the code on /push/subscribe: a stranger who finds
-// this URL cannot enrol their own device and start reading your notifications.
-// Turn it off only if enrolment is meant to be open to whoever turns up.
+// this URL cannot enroll their own device and start reading your notifications.
+// Turn it off only if enrollment is meant to be open to whoever turns up.
 const kukuroo = mountKukuroo({
   prefix: "/push",
   standalone: true,
