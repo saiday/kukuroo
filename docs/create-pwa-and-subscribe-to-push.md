@@ -1,7 +1,7 @@
 # Creating the PWA and subscribing to push
 
 Everything Safari does differently, in the order you will meet it. Kukuroo's bundled
-enrolment page already handles all of this; the notes matter when you build your own UI, or
+enrollment page already handles all of this; the notes matter when you build your own UI, or
 when something has stopped working and nothing said why.
 
 ## Enrolling
@@ -28,7 +28,7 @@ notification, and WebKit displays it with no JavaScript of yours involved.
 
 **There is no `pushsubscriptionchange` handler,** because there is no service worker to host
 one. A dead subscription is discovered from a 410 on the next send, at which point Kukuroo
-removes it from KV and reports it in `removed`. Re-enrolment is manual: the device has to open
+removes it from KV and reports it in `removed`. Re-enrollment is manual: the device has to open
 the page and subscribe again.
 
 **Deleting the Home Screen icon destroys the subscription,** and nothing reports it. Neither

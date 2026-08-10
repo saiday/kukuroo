@@ -69,7 +69,7 @@ Read the response rather than the exit code:
 
 - `"delivered":1` or more — done.
 - `"delivered":0` — the request was fine and no device is enrolled. Nothing gets stored. The fix is
-  enrolment, not config: open the origin in Safari on the phone, Add to Home Screen, open it **from
+  enrollment, not config: open the origin in Safari on the phone, Add to Home Screen, open it **from
   the icon**, and allow notifications. A Safari tab cannot subscribe on iOS.
 - `401` — the token is wrong, or has been rotated on the machine that holds the credentials file.
   Nothing gets stored; ask for the current one.

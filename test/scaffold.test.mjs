@@ -43,7 +43,7 @@ ok("the gated answer writes requireInvite: true", gated.includes("requireInvite:
 ok("the open answer writes requireInvite: false", open.includes("requireInvite: false"));
 ok("neither answer writes the other one", !gated.includes("requireInvite: false") &&
   !open.includes("requireInvite: true"));
-ok("both mount the enrolment page", gated.includes("standalone: true") &&
+ok("both mount the enrollment page", gated.includes("standalone: true") &&
   open.includes("standalone: true"));
 ok("the open answer says so in the route list", open.includes("anyone with this URL"));
 ok("the gated answer does not", !gated.includes("anyone with this URL"));
@@ -52,9 +52,9 @@ ok("the gated answer does not", !gated.includes("anyone with this URL"));
 // it, and the operator's own origin has to be told about instead.
 const apiOnly = workerSource({ frontEnd: false, requireInvite: true });
 ok("the no-front-end answer writes standalone: false", apiOnly.includes("standalone: false"));
-ok("it does not route or advertise the enrolment page",
+ok("it does not route or advertise the enrollment page",
   !apiOnly.includes("/push/enroll"));
-ok("it names the variable that lets another origin enrol",
+ok("it names the variable that lets another origin enroll",
   apiOnly.includes("KUKUROO_ALLOWED_ORIGINS"));
 ok("the bundled-page answer needs no such warning",
   !gated.includes("KUKUROO_ALLOWED_ORIGINS"));

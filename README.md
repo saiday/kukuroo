@@ -2,14 +2,14 @@
 
 Your own Web Push service, on a Cloudflare Worker.
 
-Kukuroo stores push subscriptions in KV, serves the page a device enrols from, and
+Kukuroo stores push subscriptions in KV, serves the page a device enrolls from, and
 encrypts and signs every notification itself. There is no server to keep alive and no
 notification vendor in the path: you hold the keys, and the push service relays
 ciphertext it cannot read.
 
 It uses **Declarative Web Push**, which so far has only shipped in Safari, so receiving
 needs an iPhone or iPad on iOS 18.4+, or macOS Safari 18.5+. Chrome, Firefox, and Android
-cannot enrol. Sending works from anything that can make a request: curl, cron, CI, or a
+cannot enroll. Sending works from anything that can make a request: curl, cron, CI, or a
 backend you already run.
 
 **Requirements.** A Cloudflare account, Node 22.6 or later, and `npx wrangler login` once.
@@ -25,13 +25,13 @@ That is the whole of it. It asks what your deployment is for, then writes a Work
 Cloudflare, and deploys. It also writes `my-push/kukuroo.credentials.json`, the only copy of
 your keys: a Worker Secret cannot be read back, so back that file up.
 
-One of the questions is where devices will enrol, either a `workers.dev` address or a domain
+One of the questions is where devices will enroll, either a `workers.dev` address or a domain
 you already have on Cloudflare. It is asked before the deploy because that is the last
 moment it is free to change.
 
 Then, on the device: open the origin it printed in Safari, **Add to Home Screen**, and open
 it **from the icon** to allow notifications. Enrolling from a Safari tab does not work on
-iOS, which is Apple's rule rather than ours; [the enrolment
+iOS, which is Apple's rule rather than ours; [the enrollment
 guide](docs/create-pwa-and-subscribe-to-push.md) covers the rest of the behaviour worth
 knowing. From then on, a notification is one request:
 
@@ -55,7 +55,7 @@ mean enrolling every device again by hand, and the two fail for different reason
   it is created, and checks every send's signature against that stored key. Sign with a new
   keypair and it answers 401 or 403, so nothing is delivered. `kukuroo init` generates the
   keypair once and writes it to `kukuroo.credentials.json`, which is the only copy of it.
-- **The origin devices enrol on.** The push service never sees or checks this, so devices
+- **The origin devices enroll on.** The push service never sees or checks this, so devices
   already enrolled keep receiving after a move. What you lose is your own side of it: a page
   on a different origin cannot read or repair subscriptions created on the old one, so you
   can neither re-subscribe nor verify them, and a notification click navigates to an address
@@ -67,7 +67,7 @@ The send token and the invite code are bound to nothing and rotate freely.
 
 ## Standalone
 
-Kukuroo runs as its own Worker at its own address, serving the enrolment page it ships
+Kukuroo runs as its own Worker at its own address, serving the enrollment page it ships
 with. Nothing to build and nothing to write: `init` scaffolds the project, and the origin is
 whatever you put in `wrangler.jsonc`.
 
@@ -76,7 +76,7 @@ live at its own address away from your site. Your website, wherever it is hosted
 involved at all: it only needs to hold the send token and POST to `/push/send` when
 something happens.
 
-Answering **no** to the bundled front end keeps the same shape but routes no enrolment page,
+Answering **no** to the bundled front end keeps the same shape but routes no enrollment page,
 so you serve your own UI and add its origin to `KUKUROO_ALLOWED_ORIGINS`.
 
 ## Mounted
@@ -102,13 +102,13 @@ export default {
 Add the KV binding, `"kv_namespaces": [{ "binding": "KUKUROO_SUBS" }]`, whose name is not
 configurable; set `KUKUROO_NAVIGATE_ORIGIN`; then run `npx kukuroo init --secrets` from the
 directory holding that `wrangler.jsonc`. Serve the bundled page from any route of yours with
-the exported `enrolmentPage()`, or build your own UI against `POST /push/subscribe`.
+the exported `enrollmentPage()`, or build your own UI against `POST /push/subscribe`.
 
-Mounting is not the only way to get enrolment onto your own hostname, and Kukuroo does not
+Mounting is not the only way to get enrollment onto your own hostname, and Kukuroo does not
 have to live on your domain at all. The only thing that matters is which origin devices
-enrol on:
+enroll on:
 
-| Your setup | How enrolment happens on your own origin |
+| Your setup | How enrollment happens on your own origin |
 |---|---|
 | Your site is a Cloudflare Worker | mount, as above |
 | Your site's DNS is on Cloudflare, hosted anywhere | a standalone Worker on a route: `{ "pattern": "www.example.com/push/*", "zone_name": "example.com" }` |
@@ -160,7 +160,7 @@ about the payload, and why a scheduled push needs the session to stay open.
 POST /push/send        bearer token   RFC 8291 aes128gcm + VAPID ES256, fans out
 POST /push/subscribe   invite-gated   stores the subscription in KV
 GET  /push/public-key  open           the VAPID public key, for the client
-GET  /push/enroll      open           the bundled enrolment page (standalone only)
+GET  /push/enroll      open           the bundled enrollment page (standalone only)
 ```
 
 `/push/send` does one encrypt-and-sign per subscription inside a single invocation, which
@@ -177,23 +177,25 @@ interface KukurooEnv {
 
 const kukuroo = mountKukuroo({
   prefix: "/push",          // where the route set lives. Default "/push"
-  standalone: false,        // serve the bundled enrolment page at <prefix>/enroll
+  standalone: false,        // serve the bundled enrollment page at <prefix>/enroll
   requireInvite: true,      // demand the code on <prefix>/subscribe. Default true
 })
 await kukuroo.handle(request, env)   // Response, or null if the path is not ours
 ```
 
-`requireInvite` is the one option that is a decision rather than a detail. Off, enrolment is
-open to anyone who reaches the URL, and everyone who enrols receives everything you send.
+`requireInvite` is the one option that is a decision rather than a detail. Off, enrollment is
+open to anyone who reaches the URL, and everyone who enrolls receives everything you send.
 Only an explicit `false` opens it, and `KUKUROO_INVITE_CODE` is generated and installed
 either way, so closing an open gate is one word and a deploy, with nothing re-enrolling.
 
 Three optional vars:
 
-- `KUKUROO_NAVIGATE_ORIGIN`: every notification's `navigate` must be on this origin. **Set
-  it.** Serving push and enrolment from one origin only makes same-origin likely, and this
-  makes it enforced; a `navigate` that leaves the origin ejects the user into a browser tab.
-  It does not restrict `icon`, which legitimately points at a CDN.
+- `KUKUROO_NAVIGATE_ORIGIN`: every notification's `navigate` must be on this origin; a
+  `navigate` that leaves it ejects the user out of the installed web app and into a browser
+  tab. With `standalone: true` you can leave it unset: that deployment serves the enrollment
+  page, so it *is* the origin devices enroll on and it reads that off each request. **Set it
+  everywhere else**, and set it here too if you want enforcement pinned to a name this
+  Worker does not answer on. It does not restrict `icon`, which legitimately points at a CDN.
 - `KUKUROO_ALLOWED_ORIGINS`: comma-separated exact origins whose pages may call `subscribe`
   and `public-key` from the browser. Unset, no CORS headers are sent. There is no wildcard.
 - `KUKUROO_VAPID_SUBJECT`: the VAPID `sub` claim, a `mailto:` or `https:` URI. Defaults to
@@ -223,9 +225,9 @@ anywhere, so Kukuroo rejects them before sending. `delivered` counts subscriptio
 service accepted the message for, which is not the same as displayed on a device; a
 `delivered` of 0 is a failure, not a quiet success.
 
-Also exported: `enrolmentPage(options)`, `buildDeclarativePayload`, and `importVapidKeys`.
+Also exported: `enrollmentPage(options)`, `buildDeclarativePayload`, and `importVapidKeys`.
 The send token and invite code rotate with `npx kukuroo rotate send-token` and `npx kukuroo
-rotate invite-code`; both read `kukuroo.credentials.json`, and neither re-enrols anything.
+rotate invite-code`; both read `kukuroo.credentials.json`, and neither re-enrolls anything.
 
 ## Alternatives
 

@@ -14,9 +14,9 @@ export const KEY_PREFIX = "sub:";
 export interface StoredSubscription {
   endpoint: string;
   keys: PushSubscriptionKeys;
-  /** ISO 8601, for working out how old an enrolment is when one goes wrong. */
+  /** ISO 8601, for working out how old an enrollment is when one goes wrong. */
   createdAt: string;
-  /** Free-form, supplied at enrolment. "iPhone", usually. */
+  /** Free-form, supplied at enrollment. "iPhone", usually. */
   label?: string;
 }
 
@@ -62,7 +62,7 @@ export async function deleteSubscription(kv: KVNamespace, key: string): Promise<
 }
 
 /**
- * Validate what the enrolment page posted. A malformed subscription stored now
+ * Validate what the enrollment page posted. A malformed subscription stored now
  * is a send that fails much later, at which point nothing points back here.
  */
 export function parseSubscriptionBody(body: unknown, label?: unknown): StoredSubscription {

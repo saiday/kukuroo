@@ -5,7 +5,7 @@
   "compatibility_date": "2026-03-17",
 
   // ---------------------------------------------------------------------------
-  // The origin devices enrol on, answered during `kukuroo init`.
+  // The origin devices enroll on, answered during `kukuroo init`.
   //
   // Moving it later does not stop delivery to devices already enrolled, because
   // the push service never sees this hostname. What it costs is your own side of
@@ -32,7 +32,7 @@
   "kv_namespaces": [{ "binding": "KUKUROO_SUBS" }],
 
   "vars": {
-    // Every notification's `navigate` must be on this origin. Serving enrolment
+    // Every notification's `navigate` must be on this origin. Serving enrollment
     // and push from one origin is what keeps a notification click inside the
     // installed web app, but that only makes same-origin *likely*: without this,
     // the guarantee rests on every future caller remembering. It does not
