@@ -32,7 +32,7 @@ export const README = "https://github.com/saiday/kukuroo";
 export const README_SECTIONS = {
   standalone: `${README}#standalone`,
   mounted: `${README}#mounted`,
-  // The origins table lives under Mounted: choosing where devices enrol is the
+  // The origins table lives under Mounted: choosing where devices enroll is the
   // same decision as choosing whether to mount, so the README tells it once.
   ownUi: `${README}#mounted`,
   api: `${README}#api`,
@@ -45,19 +45,20 @@ export const README_SECTIONS = {
  *   { kind: "workers-dev", url: "https://my-push.acme.workers.dev" }
  *   { kind: "domain", hostname: "push.example.com" }
  *
- * A workers.dev address is `<worker>.<account-subdomain>.workers.dev`, and there
- * is no wrangler command that reports the account subdomain, so the first render
- * genuinely does not know the origin. `url` is null then, and the only honest
- * thing to do is leave KUKUROO_NAVIGATE_ORIGIN out: enforcement is off until the
- * second deploy switches it on, which is true, whereas a placeholder would be a
- * wrong value quietly live on a real Worker.
+ * A workers.dev address is `<worker>.<account-subdomain>.workers.dev`, and no
+ * wrangler command reports the account subdomain, so nothing knows the origin
+ * until a deploy has printed it. `url` is null until then, and the config leaves
+ * KUKUROO_NAVIGATE_ORIGIN out rather than invent a placeholder that would be a
+ * wrong value quietly live on a real Worker. A Worker that serves its own
+ * enrollment page enforces the rule off the request instead, so nothing has to be
+ * written back and there is no second deploy. See withNavigateOrigin in mount.ts.
  */
 export function originUrl(origin) {
   return origin.kind === "domain" ? `https://${origin.hostname}` : origin.url;
 }
 
 /** The Worker's config, with the origin answer already written into it. */
-export function wranglerSource({ name, origin }) {
+export function wranglerSource({ name, origin, frontEnd = true }) {
   const url = originUrl(origin);
 
   const address =
@@ -70,22 +71,41 @@ export function wranglerSource({ name, origin }) {
   // so it is a legitimate permanent origin, but only as long as this Worker keeps
   // its name and the account keeps its subdomain: either one moves the origin.
   //
-  // To move to a hostname of your own instead, before anyone enrols, replace this
+  // To move to a hostname of your own instead, before anyone enrolls, replace this
   // line with a route and set KUKUROO_NAVIGATE_ORIGIN to match:
   //   "workers_dev": false,
   //   "routes": [{ "pattern": "push.example.com", "custom_domain": true }],
   "workers_dev": true,`;
 
   // With no origin yet there is nothing to put in `vars`, and an empty object is
-  // the accurate way to say so.
+  // the accurate way to say so. Whether that is a gap depends on who serves the
+  // enrollment page: a Worker that serves its own knows the answer at runtime.
   const vars =
     url === null
-      ? `  // KUKUROO_NAVIGATE_ORIGIN is written here by \`kukuroo init\` once the first
-  // deploy has revealed this Worker's workers.dev hostname. Until then the
-  // navigate origin is not enforced, and the second deploy is what turns it on.
+      ? frontEnd
+        ? `  // No KUKUROO_NAVIGATE_ORIGIN here, and none needed. This Worker serves the
+  // enrollment page, so it *is* the origin devices enroll on, and it reads that off
+  // each request rather than being told. That is what lets a workers.dev
+  // deployment enforce the rule on its very first deploy: the address is
+  // <worker>.<account-subdomain>.workers.dev, and nothing reports an account's
+  // own subdomain until a Worker is live on it.
+  //
+  // Set it anyway to pin enforcement to a name this Worker does not answer on,
+  // which is what you want while moving to a hostname of your own.
   "vars": {}`
+        : `  // Set KUKUROO_NAVIGATE_ORIGIN to the origin serving your enrollment page. There
+  // is no page on this Worker, so it cannot work the answer out for itself, and
+  // until it is set a notification may navigate anywhere, which ejects the reader
+  // out of the installed web app and into a browser tab.
+  //
+  // The same origin goes in KUKUROO_ALLOWED_ORIGINS, or the browser refuses the
+  // subscribe call before it is made.
+  "vars": {
+    // "KUKUROO_NAVIGATE_ORIGIN": "https://www.example.com",
+    // "KUKUROO_ALLOWED_ORIGINS": "https://www.example.com"
+  }`
       : `  "vars": {
-    // Every notification's \`navigate\` must be on this origin. Serving enrolment
+    // Every notification's \`navigate\` must be on this origin. Serving enrollment
     // and push from one origin is what keeps a notification click inside the
     // installed web app, but that only makes same-origin *likely*: without this,
     // the guarantee rests on every future caller remembering. It does not
@@ -105,7 +125,7 @@ export function wranglerSource({ name, origin }) {
   "compatibility_date": "2026-03-17",
 
   // ---------------------------------------------------------------------------
-  // The origin devices enrol on, answered during \`kukuroo init\`.
+  // The origin devices enroll on, answered during \`kukuroo init\`.
   //
   // Moving it later does not stop delivery to devices already enrolled, because
   // the push service never sees this hostname. What it costs is your own side of
@@ -148,25 +168,25 @@ ${vars}
  */
 export function workerSource({ frontEnd, requireInvite }) {
   const enrolRoute = frontEnd
-    ? " *   GET  /push/enroll      the enrolment page you add to your Home Screen\n"
+    ? " *   GET  /push/enroll      the enrollment page you add to your Home Screen\n"
     : "";
   const subscribeGate = requireInvite
     ? " *   POST /push/subscribe   invite-gated"
-    : " *   POST /push/subscribe   open: anyone with this URL can enrol a device";
+    : " *   POST /push/subscribe   open: anyone with this URL can enroll a device";
 
   const purpose = frontEnd
     ? `/**
  * A standalone Kukuroo deployment: a notification sink and nothing else.
  *`
     : `/**
- * A standalone Kukuroo deployment with no enrolment page of its own: the push
+ * A standalone Kukuroo deployment with no enrollment page of its own: the push
  * API at its own address, for a UI you serve somewhere else.
  *`;
 
   const frontEndNote = frontEnd
-    ? `// \`standalone: true\` is what serves the bundled enrolment page. Without it
+    ? `// \`standalone: true\` is what serves the bundled enrollment page. Without it
 // /push/enroll is not routed at all, on the assumption that the host has its own.`
-    : `// \`standalone: false\`: no enrolment page is served here, because you said you
+    : `// \`standalone: false\`: no enrollment page is served here, because you said you
 // would bring your own. The page that calls /push/subscribe lives on another
 // origin, so that origin has to be listed in KUKUROO_ALLOWED_ORIGINS in
 // wrangler.jsonc, or the browser will refuse the call before it is made.
@@ -174,12 +194,12 @@ export function workerSource({ frontEnd, requireInvite }) {
 
   const gateNote = requireInvite
     ? `// \`requireInvite: true\` keeps the code on /push/subscribe: a stranger who finds
-// this URL cannot enrol their own device and start reading your notifications.
-// Turn it off only if enrolment is meant to be open to whoever turns up.`
-    : `// \`requireInvite: false\` means enrolment is open: anyone who reaches this URL
+// this URL cannot enroll their own device and start reading your notifications.
+// Turn it off only if enrollment is meant to be open to whoever turns up.`
+    : `// \`requireInvite: false\` means enrollment is open: anyone who reaches this URL
 // can add their own device and will receive everything you send afterwards. The
 // code still exists, generated and stored as KUKUROO_INVITE_CODE, so closing the
-// gate is one word here and a deploy. Nothing re-enrols.`;
+// gate is one word here and a deploy. Nothing re-enrolls.`;
 
   // With no page of ours to send people to, / is not a redirect: it is a 404
   // like any other unrouted path, and saying so beats bouncing them at a route
@@ -194,7 +214,7 @@ export function workerSource({ frontEnd, requireInvite }) {
     : `    return new Response("Not found\\n", { status: 404 });`;
 
   return `${purpose}
-${enrolRoute} *   GET  /push/public-key  the VAPID public key, for the enrolment page
+${enrolRoute} *   GET  /push/public-key  the VAPID public key, for the enrollment page
 ${subscribeGate}
  *   POST /push/send        bearer-gated, encrypts and fans out
  *
@@ -238,9 +258,9 @@ kukuroo.credentials.json
 /** What the mounted answer prints instead of a project. */
 export function mountedSnippet({ frontEnd, requireInvite }) {
   const ui = frontEnd
-    ? `\`standalone: true\` serves the bundled enrolment page at /push/enroll, on your
+    ? `\`standalone: true\` serves the bundled enrollment page at /push/enroll, on your
 own origin, which is where a notification tap should land anyway.`
-    : `You said you would serve your own enrolment UI. It needs two calls:
+    : `You said you would serve your own enrollment UI. It needs two calls:
 GET /push/public-key for the VAPID key, then POST /push/subscribe with what
 \`pushManager.subscribe()\` handed back${requireInvite ? ' and an "invite" field' : ""}.
 src/enroll-page.ts in this package is the fifteen lines of client JS to copy.

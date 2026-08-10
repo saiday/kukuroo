@@ -106,7 +106,7 @@ look.
 
 This is not ceremony. Deleting a Home Screen icon destroys the subscription and nothing
 reports that; a device left in a drawer for a month is equally silent. As
-[the enrolment guide](create-pwa-and-subscribe-to-push.md) puts it, the absence of a
+[the enrollment guide](create-pwa-and-subscribe-to-push.md) puts it, the absence of a
 message you were expecting is the only reliable signal that the channel has died. A promise
 made without a live test is a promise made on faith, and the cost of testing is one
 notification you were about to receive anyway.

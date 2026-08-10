@@ -1,6 +1,6 @@
 // The HTTP surface, exercised through the real route set: routing, both gates,
 // the fan-out, and CORS. The crypto has its own file; this one is about the
-// contract a deployment actually speaks. If this fails, an enrolment page or a
+// contract a deployment actually speaks. If this fails, an enrollment page or a
 // sender somewhere sees behaviour the README does not describe.
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, writeFileSync } from "node:fs";
@@ -207,7 +207,7 @@ const shortKeys = await kukuroo.handle(req("/push/subscribe", {
     subscription: { endpoint: "https://web.push.apple.com/x", keys: { p256dh: "AAAA", auth: "AA" } },
   }),
 }), env);
-ok("key material that cannot decrypt is refused at enrolment, not at send time",
+ok("key material that cannot decrypt is refused at enrollment, not at send time",
   shortKeys.status === 400 && (await shortKeys.json()).error.includes("p256dh"));
 
 // ---- caller fields that go straight into headers -----------------------------
@@ -321,9 +321,9 @@ ok("with the gate open, the missing secret is not consulted and not a 503",
   }), openEnvNoSecret)).status === 200);
 
 const openPage = await (await openKukuroo.handle(req("/push/enroll"), openEnv)).text();
-ok("the open enrolment page has no code field to type into", !openPage.includes('id="invite"'));
+ok("the open enrollment page has no code field to type into", !openPage.includes('id="invite"'));
 const gatedPage = await (await kukuroo.handle(req("/push/enroll"), env)).text();
-ok("the gated enrolment page still asks for one", gatedPage.includes('id="invite"'));
+ok("the gated enrollment page still asks for one", gatedPage.includes('id="invite"'));
 
 // The page ships its JavaScript inline, and the HTML tokenizer ends a script
 // element at the first closing tag it sees, without parsing the JS around it. A
@@ -362,6 +362,47 @@ for (const [label, page] of [["gated", gatedPage], ["open", openPage]]) {
     complaint = String(error.stderr ?? "").split("\n").slice(0, 3).join(" ");
   }
   ok(`the ${label} page's client JavaScript parses${parsed ? "" : `: ${complaint}`}`, parsed);
+}
+
+// ---- the navigate origin, when nobody configured one -----------------------
+//
+// This is what removed the second deploy from `kukuroo init`. A workers.dev
+// address is only knowable after a deploy, so setup used to deploy, read the
+// address, write it into the config as KUKUROO_NAVIGATE_ORIGIN, and deploy
+// again. A Worker serving its own enrollment page can read the same answer off
+// the request it is already answering.
+{
+  const sendTo = (routes, url, navigate, over = {}) =>
+    routes.handle(
+      new Request(url + "/push/send", {
+        method: "POST",
+        headers: { authorization: "Bearer token-token-token" },
+        body: JSON.stringify({ notification: { title: "hi", navigate } }),
+      }),
+      { ...env, ...over },
+    );
+
+  const serving = mountKukuroo({ prefix: "/push", standalone: true });
+  const apiOnly = mountKukuroo({ prefix: "/push", standalone: false });
+
+  const offOrigin = await sendTo(serving, "https://demo.acct.workers.dev", "https://elsewhere.example/x");
+  ok("a page-serving Worker enforces its own origin with nothing configured",
+    offOrigin.status === 400 &&
+      (await offOrigin.json()).error.includes("demo.acct.workers.dev"));
+  ok("and still accepts a navigate that is on it",
+    (await sendTo(serving, "https://demo.acct.workers.dev", "https://demo.acct.workers.dev/")).status === 200);
+
+  // Configured always wins, or moving to a hostname of your own could never be
+  // enforced from the old one while the move is in progress.
+  const pinned = await sendTo(serving, "https://demo.acct.workers.dev", "https://demo.acct.workers.dev/",
+    { KUKUROO_NAVIGATE_ORIGIN: "https://push.example.com" });
+  ok("an explicit navigate origin overrides the request's own",
+    pinned.status === 400 && (await pinned.json()).error.includes("push.example.com"));
+
+  // The page is on somebody else's origin here, so this Worker's own origin is
+  // the wrong answer and guessing it would reject every correct navigate.
+  ok("a Worker with no page of its own infers nothing",
+    (await sendTo(apiOnly, "https://api.example.com", "https://www.example.com/read")).status === 200);
 }
 
 // The default is the safe one: an option that is absent, misspelled, or lost in

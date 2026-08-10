@@ -21,7 +21,7 @@ export {
   type BuildPayloadOptions,
   type DeclarativeNotification,
 } from "./payload.ts";
-export { enrolmentPage, type EnrolmentPageOptions } from "./enroll-page.ts";
+export { enrollmentPage, type EnrollmentPageOptions } from "./enroll-page.ts";
 export { InvalidRequest } from "./errors.ts";
 export type { KukurooEnv } from "./env.ts";
 export type { StoredSubscription } from "./subscriptions.ts";

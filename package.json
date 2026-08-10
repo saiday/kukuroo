@@ -29,7 +29,7 @@
   "scripts": {
     "prepublishOnly": "npm test && npm run typecheck",
     "init": "node scripts/init.mjs init",
-    "test": "node --experimental-strip-types --no-warnings test/crypto.test.mjs && node --experimental-strip-types --no-warnings test/mount.test.mjs && node --experimental-strip-types --no-warnings test/scaffold.test.mjs && node --experimental-strip-types --no-warnings test/tui.test.mjs && node --experimental-strip-types --no-warnings test/agent.test.mjs",
+    "test": "node --experimental-strip-types --no-warnings test/crypto.test.mjs && node --experimental-strip-types --no-warnings test/mount.test.mjs && node --experimental-strip-types --no-warnings test/scaffold.test.mjs && node --experimental-strip-types --no-warnings test/tui.test.mjs && node --experimental-strip-types --no-warnings test/init.test.mjs && node --experimental-strip-types --no-warnings test/agent.test.mjs",
     "typecheck": "tsc --noEmit"
   },
   "bin": {

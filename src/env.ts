@@ -2,7 +2,7 @@
  * The bindings a Kukuroo deployment needs.
  *
  * Host Workers extend their own `Env` with this, so a missing binding is a type
- * error at build time rather than a 500 the first time someone enrols.
+ * error at build time rather than a 500 the first time someone enrolls.
  */
 export interface KukurooEnv {
   /** KV namespace holding the subscriptions. */
@@ -22,7 +22,7 @@ export interface KukurooEnv {
    *
    * Only required when the private key is stored as a bare 32-byte scalar,
    * which does not carry its public half. With a JWK or PKCS#8 the public key
-   * is derived, and `GET <prefix>/public-key` serves it to the enrolment page,
+   * is derived, and `GET <prefix>/public-key` serves it to the enrollment page,
    * so there is nothing to configure and nothing to mistype.
    *
    * When it *is* set it is verified against the private key rather than
@@ -55,7 +55,7 @@ export interface KukurooEnv {
    * Optional. Comma-separated exact origins whose pages may call
    * `<prefix>/subscribe` and `<prefix>/public-key` from the browser, e.g.
    * "https://www.example.com". Unset, no CORS headers are sent, which is the
-   * right default when the enrolment page lives on this Worker's own origin.
+   * right default when the enrollment page lives on this Worker's own origin.
    *
    * `<prefix>/send` is never CORS-enabled regardless of this list: the send
    * token is a server secret, and a browser page that holds one is a leak in

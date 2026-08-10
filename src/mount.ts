@@ -4,7 +4,7 @@
  *   POST <prefix>/subscribe   invite-gated    stores a subscription in KV
  *   POST <prefix>/send        bearer-gated    encrypts and fans out
  *   GET  <prefix>/public-key  open            the VAPID public key
- *   GET  <prefix>/enroll      open            the bundled enrolment page
+ *   GET  <prefix>/enroll      open            the bundled enrollment page
  *
  * `requireInvite: false` opens the first of those. See the option.
  *
@@ -15,7 +15,7 @@
  * CORS preflights from the listed origins. `send` never does; see corsFor.
  */
 
-import { enrolmentPage } from "./enroll-page.ts";
+import { enrollmentPage } from "./enroll-page.ts";
 import type { KukurooEnv } from "./env.ts";
 import { InvalidRequest } from "./errors.ts";
 import { send, type SendOptions } from "./send.ts";
@@ -26,7 +26,7 @@ export interface MountOptions {
   /** Where the route set lives. No trailing slash. */
   prefix?: string;
   /**
-   * Serve the bundled enrolment page at `<prefix>/enroll`. Mounted deployments
+   * Serve the bundled enrollment page at `<prefix>/enroll`. Mounted deployments
    * supply their own UI on their own origin and should leave this off.
    */
   standalone?: boolean;
@@ -39,7 +39,7 @@ export interface MountOptions {
    * device and reading the titles of everything you send. A channel meant for
    * whoever turns up is not, and there the code is friction that buys nothing.
    *
-   * Off, the enrolment page drops its code field and the endpoint accepts any
+   * Off, the enrollment page drops its code field and the endpoint accepts any
    * well-formed subscription. Nothing else changes: KUKUROO_INVITE_CODE stays
    * generated and stored, so turning the gate back on is this one word plus a
    * deploy, with no device re-enrolling.
@@ -67,7 +67,7 @@ function json(
 /**
  * Comparison that does not leak the answer through timing. Both gates here
  * guard something worth guarding: the send token lets anyone spam the device,
- * and the invite code lets anyone enrol their own phone and start reading the
+ * and the invite code lets anyone enroll their own phone and start reading the
  * owner's notification titles.
  */
 function secretEquals(a: string, b: string): boolean {
@@ -80,7 +80,7 @@ function secretEquals(a: string, b: string): boolean {
 /**
  * A binding that was never configured arrives as `undefined`, and comparing
  * against it throws rather than returning false. That surfaces as an opaque 500
- * on every enrolment attempt, which reads as "the service is broken" instead of
+ * on every enrollment attempt, which reads as "the service is broken" instead of
  * "you skipped a setup step". Given how many manual steps stand between a fresh
  * account and a working deployment, this is likely rather than hypothetical.
  */
@@ -103,7 +103,7 @@ function requireSecret(
  *
  * `env.KUKUROO_SUBS` is a KV namespace, so an unconfigured one is `undefined`
  * and the first `.put` on it throws a TypeError straight out of `handle()`.
- * The operator sees Cloudflare's opaque 1101 page on every enrolment while the
+ * The operator sees Cloudflare's opaque 1101 page on every enrollment while the
  * cause is one missing line of wrangler config, and the binding name is not
  * configurable, so it is the easiest step in the whole setup to skip.
  */
@@ -134,7 +134,7 @@ function bearerToken(request: Request): string | null {
 /**
  * CORS is operator policy from the environment, like the navigate origin.
  * Unset, no CORS header is ever emitted and cross-origin browser calls fail,
- * which is the right default for a deployment that serves its own enrolment.
+ * which is the right default for a deployment that serves its own enrollment.
  *
  * Only `subscribe` and `public-key` ever get CORS headers. `send` never does,
  * deliberately: the send token is a server secret, and a browser page holding
@@ -143,7 +143,7 @@ function bearerToken(request: Request): string | null {
  *
  * Entries are normalised through `new URL().origin`, so a stray path or a
  * default port does not silently fail to match. There is no wildcard: the
- * list of pages that may enrol a device is short, and writing it out is the
+ * list of pages that may enroll a device is short, and writing it out is the
  * point.
  *
  * The parse cache lives per mount, not per module, so two route sets with
@@ -244,6 +244,28 @@ function normalizePrefix(raw: string): string {
   return trimmed.startsWith("/") ? trimmed : "/" + trimmed;
 }
 
+/**
+ * Settle the origin every notification's `navigate` must be on.
+ *
+ * KUKUROO_NAVIGATE_ORIGIN wins whenever it is set. Failing that, a deployment
+ * serving its own enrollment page *is* the origin devices enrolled on, and it
+ * learns that from the request it is answering rather than from configuration.
+ *
+ * Which is the only way a workers.dev deployment can enforce this on its first
+ * deploy. The address is `<worker>.<account-subdomain>.workers.dev` and nothing
+ * tells an account its own subdomain until a Worker is live on it, so setup
+ * used to deploy, read the address off wrangler's output, write it into the
+ * config, and deploy a second time purely to fill in this one string.
+ *
+ * A deployment that does *not* serve the page infers nothing. There the page is
+ * on an origin of the operator's own and this one is just the API behind it, so
+ * a guess would reject every correct `navigate` instead of the wrong ones.
+ */
+function withNavigateOrigin(request: Request, env: KukurooEnv, standalone: boolean): KukurooEnv {
+  if (env.KUKUROO_NAVIGATE_ORIGIN || !standalone) return env;
+  return { ...env, KUKUROO_NAVIGATE_ORIGIN: new URL(request.url).origin };
+}
+
 export function mountKukuroo(options: MountOptions = {}): KukurooRoutes {
   const prefix = normalizePrefix(options.prefix ?? "/push");
   const originsCache: OriginsCache = { origins: [] };
@@ -264,7 +286,7 @@ export function mountKukuroo(options: MountOptions = {}): KukurooRoutes {
 
       if (route === "/enroll" && request.method === "GET") {
         if (options.standalone !== true) return null;
-        const page = enrolmentPage({
+        const page = enrollmentPage({
           subscribePath: prefix + "/subscribe",
           publicKeyPath: prefix + "/public-key",
           requireInvite,
@@ -305,7 +327,7 @@ export function mountKukuroo(options: MountOptions = {}): KukurooRoutes {
 
       if (route === "/send") {
         if (request.method !== "POST") return json({ error: "method not allowed" }, 405);
-        return handleSend(request, env);
+        return handleSend(request, withNavigateOrigin(request, env, options.standalone === true));
       }
 
       // Mounted at the root, Kukuroo owns no namespace of its own, so an

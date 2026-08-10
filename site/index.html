@@ -356,7 +356,7 @@
       <h2>Already have a Worker? Mount it.</h2>
       <p class="defs">
         If you already run a site on Cloudflare Workers, Kukuroo mounts into the
-        router you have. Devices enrol on your hostname, which is where a
+        router you have. Devices enroll on your hostname, which is where a
         notification tap should land.
       </p>
       <div class="steps">
@@ -391,14 +391,14 @@ export default {
           </div>
         </div>
         <div class="step">
-          <b>Serve enrolment on your origin</b>
+          <b>Serve enrollment on your origin</b>
           <p>Return the bundled page from a route of yours, or build your own
           against <code>/push/subscribe</code>.</p>
           <div class="term">
             <div class="term-bar"><span class="dots" aria-hidden="true"></span><span class="title">src/worker.ts</span></div>
-            <pre class="term-body">import { enrolmentPage } from <span class="str">"kukuroo"</span>;
+            <pre class="term-body">import { enrollmentPage } from <span class="str">"kukuroo"</span>;
 
-return new Response(enrolmentPage({
+return new Response(enrollmentPage({
   subscribePath: <span class="str">"/push/subscribe"</span>,
   publicKeyPath: <span class="str">"/push/public-key"</span>,
 }), { headers: { <span class="str">"content-type"</span>: <span class="str">"text/html"</span> } });</pre>
@@ -417,7 +417,7 @@ return new Response(enrolmentPage({
         <li><b>Cloudflare Workers.</b> The only place it runs. No Docker image,
         no binary, no other host.</li>
         <li><b>Safari.</b> Declarative Web Push has shipped nowhere else yet.
-        Other browsers are turned away at the enrolment page rather than left
+        Other browsers are turned away at the enrollment page rather than left
         half working.</li>
         <li><b>iOS 18.4 or later</b>, with the page on your Home Screen and
         opened from the icon. A Safari tab will not do, and that is Apple's rule

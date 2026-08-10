@@ -44,7 +44,7 @@ quietly.
   displayed on a device, but a `delivered` of 0 means nothing was even accepted, and that is a
   failure.
 - `removed` counts subscriptions deleted from KV because the push service answered 404 or 410. A dead
-  subscription is only ever discovered this way, and re-enrolment is manual.
+  subscription is only ever discovered this way, and re-enrollment is manual.
 - `failures` carries `{ endpoint, status, detail }` per subscription that did not go out.
 
 ## Members WebKit ignores
@@ -66,11 +66,11 @@ service accepts the message and it is never delivered. Keep `body` and `data` sm
 
 | Status | Body | What it means |
 |---|---|---|
-| 200 | `{"delivered":0,...}` | Request fine, nothing enrolled. Re-enrol: open the origin in Safari, Add to Home Screen, open from the icon. |
+| 200 | `{"delivered":0,...}` | Request fine, nothing enrolled. Re-enroll: open the origin in Safari, Add to Home Screen, open from the icon. |
 | 400 | `{"error":"body must be JSON"}` | Malformed request body. |
 | 400 | `{"error":"notification.<field> ..."}` | Validation, and the message names the field and why. |
 | 401 | `{"error":"unauthorized"}` | Missing or stale bearer token. `kukuroo rotate send-token` replaces it, and the env file needs the new value. |
-| 403 | `{"error":"invalid invite code"}` | Only `/subscribe`. Enrolment, not sending. |
+| 403 | `{"error":"invalid invite code"}` | Only `/subscribe`. Enrollment, not sending. |
 | 405 | `{"error":"method not allowed"}` | `/send` is POST only. |
 | 503 | `{"error":"KUKUROO_... is not configured..."}` | A Worker Secret is missing. `npx kukuroo init --secrets`. |
 
@@ -99,8 +99,8 @@ if (result.delivered === 0) throw new Error("no devices are enrolled");
 ```
 
 `send` takes the same options as the HTTP body and returns the same result. Also exported:
-`buildDeclarativePayload` to validate a payload without sending, and `enrolmentPage()` to serve the
-bundled enrolment UI from a route of your own.
+`buildDeclarativePayload` to validate a payload without sending, and `enrollmentPage()` to serve the
+bundled enrollment UI from a route of your own.
 
 ## Where notifications land
 
