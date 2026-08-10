@@ -325,6 +325,28 @@ ok("the open enrollment page has no code field to type into", !openPage.includes
 const gatedPage = await (await kukuroo.handle(req("/push/enroll"), env)).text();
 ok("the gated enrollment page still asks for one", gatedPage.includes('id="invite"'));
 
+// What iOS writes under the Home Screen icon. It is read every day after
+// enrollment, on a screen beside other apps, so it has to name the deployment
+// rather than describe the one-off act of enrolling. The heading is the opposite
+// case and stays an instruction, which is why these are two values and not one.
+ok("the document title is the deployment's own name",
+  gatedPage.includes("<title>push</title>"));
+ok("the Home Screen name is the same",
+  gatedPage.includes('<meta name="apple-mobile-web-app-title" content="push">'));
+ok("the heading is still the instruction, not the name",
+  gatedPage.includes('<h1 id="heading">Enroll this device</h1>'));
+
+const wdPage = await (await kukuroo.handle(
+  new Request("https://kukuroo-qa.acct.workers.dev/push/enroll"), env)).text();
+ok("a workers.dev deployment is named after the Worker, not the account",
+  wdPage.includes("<title>kukuroo-qa</title>"));
+
+// An IP is not a name, and "192" under an icon is worse than the generic string.
+const ipPage = await (await kukuroo.handle(
+  new Request("http://192.168.1.9:8787/push/enroll"), env)).text();
+ok("a bare IP falls back rather than naming the app after an octet",
+  ipPage.includes("<title>Enroll this device</title>"));
+
 // The page ships its JavaScript inline, and the HTML tokenizer ends a script
 // element at the first closing tag it sees, without parsing the JS around it. A
 // closing tag anywhere in that source, in a string or even in a comment, cuts the

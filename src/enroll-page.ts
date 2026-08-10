@@ -19,7 +19,20 @@ export interface EnrollmentPageOptions {
   subscribePath: string;
   /** Where the page fetches the VAPID public key; path or absolute URL, as above. */
   publicKeyPath: string;
+  /** The page's first heading. An instruction, not a name. Default "Enroll this device". */
   title?: string;
+  /**
+   * What the installed web app is called: the document title, and the name iOS
+   * writes under the icon on Add to Home Screen.
+   *
+   * This is separate from `title` because the two are read at different moments.
+   * The heading is read once, mid-enrollment, by somebody who already knows what
+   * they are enrolling in; the name is read every day afterwards, on a Home Screen
+   * beside other apps, where "Enroll this device" says nothing about whose
+   * notifications these are. `mountKukuroo` defaults it to the first label of the
+   * hostname the request arrived on, so a deployment is named after itself.
+   */
+  appName?: string;
   /**
    * Whether to ask for the invite code. Default true, matching the Worker's
    * default gate. Set it to whatever `mountKukuroo` was given: a page that asks
@@ -39,6 +52,7 @@ function escapeHtml(value: string): string {
 
 export function enrollmentPage(options: EnrollmentPageOptions): string {
   const title = escapeHtml(options.title ?? "Enroll this device");
+  const appName = escapeHtml(options.appName ?? options.title ?? "Enroll this device");
   const inviteField =
     options.requireInvite === false
       ? ""
@@ -49,10 +63,10 @@ export function enrollmentPage(options: EnrollmentPageOptions): string {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="${title}">
+<meta name="apple-mobile-web-app-title" content="${appName}">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="robots" content="noindex, nofollow">
-<title>${title}</title>
+<title>${appName}</title>
 <style>
   :root { color-scheme: light dark }
   * { box-sizing: border-box }

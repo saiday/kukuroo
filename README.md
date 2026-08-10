@@ -104,6 +104,11 @@ configurable; set `KUKUROO_NAVIGATE_ORIGIN`; then run `npx kukuroo init --secret
 directory holding that `wrangler.jsonc`. Serve the bundled page from any route of yours with
 the exported `enrollmentPage()`, or build your own UI against `POST /push/subscribe`.
 
+Kukuroo ships TypeScript source rather than a build, because it only ever runs inside a
+Workers bundle. Your `tsconfig.json` needs `"allowImportingTsExtensions": true` to follow
+its imports, or `tsc` reports errors from inside `node_modules/kukuroo`; wrangler's esbuild
+needs no help. The scaffolded project sets this already.
+
 Mounting is not the only way to get enrollment onto your own hostname, and Kukuroo does not
 have to live on your domain at all. The only thing that matters is which origin devices
 enroll on:
@@ -168,11 +173,14 @@ has [a ceiling on the free plan](docs/free-plan-device-limits.md).
 
 ```ts
 interface KukurooEnv {
-  KUKUROO_SUBS:          KVNamespace
-  KUKUROO_VAPID_PRIVATE: string   // Worker Secret. A JWK
-  KUKUROO_SEND_TOKEN:    string   // Worker Secret
-  KUKUROO_INVITE_CODE:   string   // Worker Secret
-  KUKUROO_VAPID_PUBLIC?: string   // only if the key is a bare 32-byte scalar
+  KUKUROO_SUBS:             KVNamespace
+  KUKUROO_VAPID_PRIVATE:    string   // Worker Secret. A JWK, PKCS#8 DER, or a bare scalar
+  KUKUROO_SEND_TOKEN:       string   // Worker Secret
+  KUKUROO_INVITE_CODE:      string   // Worker Secret
+  KUKUROO_VAPID_PUBLIC?:    string   // only if the key is a bare 32-byte scalar
+  KUKUROO_NAVIGATE_ORIGIN?: string   // the three below are described under this block
+  KUKUROO_ALLOWED_ORIGINS?: string
+  KUKUROO_VAPID_SUBJECT?:   string
 }
 
 const kukuroo = mountKukuroo({

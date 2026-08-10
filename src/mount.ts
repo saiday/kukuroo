@@ -266,6 +266,24 @@ function withNavigateOrigin(request: Request, env: KukurooEnv, standalone: boole
   return { ...env, KUKUROO_NAVIGATE_ORIGIN: new URL(request.url).origin };
 }
 
+/**
+ * What to call the installed web app, taken from the hostname it is served on.
+ *
+ * iOS writes this under the Home Screen icon, where it outlives the enrollment
+ * it was read during. The first label is the part that identifies a deployment:
+ * `kukuroo-qa.<account>.workers.dev` is "kukuroo-qa", `push.example.com` is
+ * "push". Everything to the right is the account's or the registrar's, shared
+ * with every other deployment the operator has, so it names nothing.
+ *
+ * An IP address has no label worth using and is not an origin anybody enrolls
+ * from twice, so it falls back rather than naming an app "192".
+ */
+function appNameFor(hostname: string): string {
+  if (/^[\d.]+$/.test(hostname) || hostname.includes(":")) return "Enroll this device";
+  const first = hostname.split(".")[0];
+  return first === undefined || first === "" ? "Enroll this device" : first;
+}
+
 export function mountKukuroo(options: MountOptions = {}): KukurooRoutes {
   const prefix = normalizePrefix(options.prefix ?? "/push");
   const originsCache: OriginsCache = { origins: [] };
@@ -289,6 +307,7 @@ export function mountKukuroo(options: MountOptions = {}): KukurooRoutes {
         const page = enrollmentPage({
           subscribePath: prefix + "/subscribe",
           publicKeyPath: prefix + "/public-key",
+          appName: appNameFor(url.hostname),
           requireInvite,
         });
         return new Response(page, {
