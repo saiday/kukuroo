@@ -2,9 +2,7 @@
 
 Your own Web Push service, on a Cloudflare Worker.
 
-Kukuroo stores push subscriptions in KV, serves the page a device enrolls from, and
-encrypts and signs every notification itself. There is no server to keep alive and no
-notification vendor in the path: you hold the keys, and the push service relays
+There is no server to keep alive and no notification vendor in the path: you hold the keys, and the push service relays
 ciphertext it cannot read.
 
 It uses **Declarative Web Push**, which so far has only shipped in Safari, so receiving
@@ -12,7 +10,6 @@ needs an iPhone or iPad on iOS 18.4+, or macOS Safari 18.5+. Chrome, Firefox, an
 cannot enroll. Sending works from anything that can make a request: curl, cron, CI, or a
 backend you already run.
 
-**Requirements.** A Cloudflare account, Node 22.6 or later, and `npx wrangler login` once.
 
 ## Install
 
