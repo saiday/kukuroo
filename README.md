@@ -86,9 +86,7 @@ on a route (`{ "pattern": "www.example.com/push/*", "zone_name": "example.com" }
 the same place, and so does a real proxy in front of your site, one that rewrites the `Host`
 header rather than a bare DNS CNAME. All that matters is which origin devices enroll on.
 
-## Agents
-
-> Ask your agent to read this section.
+## Agent Skill for sending push notification
 
 Your coding agent can send these, which is most of the point of having a phone in the
 loop. For Claude Code that is a plugin, and this repository is its own marketplace:
