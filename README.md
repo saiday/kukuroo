@@ -26,14 +26,13 @@ Cloudflare, and deploys. It also writes `my-push/kukuroo.credentials.json`, the 
 your keys: a Worker Secret cannot be read back, so back that file up.
 
 One of the questions is where devices will enroll, either a `workers.dev` address or a domain
-you already have on Cloudflare. It is asked before the deploy because that is the last
-moment it is free to change.
+you already have on Cloudflare. Settle it before you deploy: it is fixed once a device has
+enrolled.
 
 Then, on the device: open the origin it printed in Safari, **Add to Home Screen**, and open
 it **from the icon** to allow notifications. Enrolling from a Safari tab does not work on
-iOS, which is Apple's rule rather than ours; [the enrollment
-guide](docs/create-pwa-and-subscribe-to-push.md) covers the rest of the behaviour worth
-knowing. From then on, a notification is one request:
+iOS. [The enrollment guide](docs/create-pwa-and-subscribe-to-push.md) covers the rest of the
+behaviour worth knowing. From then on, a notification is one request:
 
 ```sh
 curl -X POST https://push.example.com/push/send \
@@ -43,10 +42,9 @@ curl -X POST https://push.example.com/push/send \
 ```
 
 Every question also has a flag, so nothing has to be answered interactively: `npx kukuroo
-init --help`. `--no-deploy` sets everything up on disk and stops, if you would rather read
-the generated Worker before it goes live: the keys are generated and written locally, and
-nothing reaches your Cloudflare account, so `npx wrangler deploy` followed by `npx kukuroo
-init --resume` is what creates the Worker and installs the secrets when you are ready.
+init --help`. `--no-deploy` stops after writing the project and the keys locally, touching
+nothing on your Cloudflare account; `npx wrangler deploy` then `npx kukuroo init --resume`
+picks it up when you are ready.
 
 ### Self-Hosted Module
 
@@ -90,6 +88,8 @@ header rather than a bare DNS CNAME. All that matters is which origin devices en
 
 ## Agents
 
+> Ask your agent to read this section.
+
 Your coding agent can send these, which is most of the point of having a phone in the
 loop. For Claude Code that is a plugin, and this repository is its own marketplace:
 
@@ -100,12 +100,8 @@ claude plugin install kukuroo@kukuroo
 
 From then on "ping me on my phone when the tests finish" works in any project, and so
 does naming a time. Setup is two questions, asked the first time it fires on a machine:
-the origin and the send token. It has to ask, because a deployment is set up on one
-machine and sent to from any number of others, so nothing `init` wrote is anywhere the
-agent can see.
-
-It caches the answers in `~/.config/kukuroo/env` at 0600, holding those two values and
-not the VAPID key. That file is shell-sourceable, so no later send has to name the
+the origin and the send token. It caches the answers in `~/.config/kukuroo/env` at 0600,
+never the VAPID key. That file is shell-sourceable, so no later send has to name the
 token:
 
 ```sh
@@ -113,10 +109,8 @@ set -a; . ~/.config/kukuroo/env; set +a
 curl -fsS -X POST "$KUKUROO_ORIGIN/push/send" -H "authorization: Bearer $KUKUROO_SEND_TOKEN" ...
 ```
 
-The file is written only after a notification has actually arrived, and a warm-up goes
-out before any promise of a later one, because a subscription dies silently and an
-untested promise is a promise made on faith. Cursor and anything else that reads a rules
-file gets the same contract from `rules/kukuroo.mdc`.
+Cursor and anything else that reads a rules file gets the same contract from
+`rules/kukuroo.mdc`.
 
 [The agents guide](docs/agents.md) covers the rest: what makes it fire, what it is told
 about the payload, and why a scheduled push needs the session to stay open.
@@ -146,14 +140,13 @@ if (result.delivered === 0) throw new Error("no devices are enrolled");
 ```
 
 `navigate` and a non-empty `title` are required, and an `icon`, if present, must be an
-absolute URL. Get any of them wrong and WebKit discards the whole message with no error
-anywhere, so Kukuroo rejects them before sending.
+absolute URL. WebKit discards a message that breaks any of these without an error anywhere,
+so Kukuroo rejects them before sending.
 
 Every binding is documented where it is declared, [`KukurooEnv` in `src/env.ts`](src/env.ts),
-as are [`MountOptions`](src/mount.ts) and [`SendOptions` and `SendResult`](src/send.ts).
-The one option that is a decision rather than a detail is `requireInvite`: off, enrollment
-is open to anyone who reaches the URL, and everyone who enrolls receives everything you
-send.
+as are [`MountOptions`](src/mount.ts) and [`SendOptions` and `SendResult`](src/send.ts). One
+option is worth reading before you set it: `requireInvite: false` opens enrollment to anyone
+who reaches the URL, and everyone who enrolls receives everything you send.
 
 Also exported: `enrollmentPage(options)`, `buildDeclarativePayload`, and `importVapidKeys`.
 The send token and invite code rotate with `npx kukuroo rotate send-token` and `npx kukuroo
