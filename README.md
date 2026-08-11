@@ -154,7 +154,7 @@ rotate invite-code`; both read `kukuroo.credentials.json`, and neither re-enroll
 
 | | Server to run | Vendor in the path | How it reaches iOS |
 |---|---|---|---|
-| **Kukuroo** | none | none | Web Push, a page on your Home Screen |
+| **Kukuroo** | none | none | [Declarative Web Push](https://webkit.org/blog/16535/meet-declarative-web-push/), a page on your Home Screen |
 | [ntfy](https://ntfy.sh) | host, domain, TLS, a process | none, self-hosted | Web Push, installable PWA |
 | [Bark](https://github.com/Finb/Bark) | yes, though it can be a Worker | none | App Store app via APNs |
 | [Gotify](https://gotify.net) | yes | none | its own app |
