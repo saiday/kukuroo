@@ -122,13 +122,9 @@ curl -X POST https://push.example.com/push/send \
   -d '{"notification":{"title":"Deploy finished","body":"api v2.3.1 is live","tag":"deploys","navigate":"https://push.example.com/deploys"}}'
 ```
 
-```json
-{"delivered":3,"removed":1,"failures":[]}
-```
-
-`delivered` counts devices the push service accepted the message for, so a `0` arrives with
-a 200 and still means nothing reached a phone. `removed` were dead subscriptions, now
-deleted.
+It answers with `delivered`, `removed`, and `failures`. `delivered` counts devices the push
+service accepted the message for, so a `0` arrives with a 200 and still means nothing
+reached a phone. `removed` were dead subscriptions, now deleted.
 
 `title` and `navigate` are required, and `icon`, if present, must be absolute. WebKit
 discards a payload that breaks any of these without an error anywhere, so Kukuroo rejects it
