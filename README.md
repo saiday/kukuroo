@@ -96,10 +96,12 @@ claude plugin marketplace add saiday/kukuroo
 claude plugin install kukuroo@kukuroo
 ```
 
-From then on "ping me on my phone when the tests finish" works in any project. Setup is
-two questions, asked the first time it fires on a machine: the origin and the send token,
-cached in `~/.config/kukuroo/env`. Cursor and anything else that reads a rules file gets
-the same instructions from `rules/kukuroo.mdc`.
+setup env in Claude code for first time:
+```sh
+/kukuroo:kukuroo-setup
+```
+
+From then on "ping me on my phone when the tests finish" works in any project.
 
 [The agents guide](docs/agents.md) covers the rest: what makes it fire, what it is told
 about the payload, and why a scheduled push needs the session to stay open.
@@ -122,14 +124,7 @@ curl -X POST https://push.example.com/push/send \
   -d '{"notification":{"title":"Deploy finished","body":"api v2.3.1 is live","tag":"deploys","navigate":"https://push.example.com/deploys"}}'
 ```
 
-It answers with `delivered`, `removed`, and `failures`. `delivered` counts devices the push
-service accepted the message for, so a `0` arrives with a 200 and still means nothing
-reached a phone. `removed` were dead subscriptions, now deleted.
-
-`title` and `navigate` are required, and `icon`, if present, must be absolute. WebKit
-discards a payload that breaks any of these without an error anywhere, so Kukuroo rejects it
-first. Each subscription costs one encrypt-and-sign inside a single invocation, which has
-[a ceiling on the free plan](docs/free-plan-device-limits.md).
+`title` and `navigate` are required, and `icon`, if present, must be absolute.
 
 From inside your own Worker, `send(env, options)` does the same with no token, since it
 already holds the bindings. [`KukurooEnv`](src/env.ts), [`MountOptions`](src/mount.ts), and
