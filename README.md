@@ -17,19 +17,15 @@ backend you already run.
 npx kukuroo init my-push
 ```
 
-That is the whole of it. It asks what your deployment is for, then writes a Worker into
-`my-push`, installs its dependencies, generates every secret, puts the secrets on
-Cloudflare, and deploys. It also writes `my-push/kukuroo.credentials.json`, the only copy of
-your keys: a Worker Secret cannot be read back, so back that file up.
+It asks a few questions, writes a Worker into `my-push`, generates and uploads every secret,
+and deploys. One answer is irreversible: where devices enroll, a `workers.dev` address or a
+domain you have on Cloudflare, fixed once a device has enrolled. Back up
+`my-push/kukuroo.credentials.json`, the only copy of your keys.
 
-One of the questions is where devices will enroll, either a `workers.dev` address or a domain
-you already have on Cloudflare. Settle it before you deploy: it is fixed once a device has
-enrolled.
-
-Then, on the device: open the origin it printed in Safari, **Add to Home Screen**, and open
-it **from the icon** to allow notifications. Enrolling from a Safari tab does not work on
-iOS. [The enrollment guide](docs/create-pwa-and-subscribe-to-push.md) covers the rest of the
-behaviour worth knowing. From then on, a notification is one request:
+On the device: open that origin in Safari, **Add to Home Screen**, and open it **from the
+icon** to allow notifications. A Safari tab does not work on iOS; [the enrollment
+guide](docs/create-pwa-and-subscribe-to-push.md) has the rest. A notification is then one
+request:
 
 ```sh
 curl -X POST https://push.example.com/push/send \
@@ -38,10 +34,9 @@ curl -X POST https://push.example.com/push/send \
   -d '{"notification":{"title":"hello","navigate":"https://push.example.com/"}}'
 ```
 
-Every question also has a flag, so nothing has to be answered interactively: `npx kukuroo
-init --help`. `--no-deploy` stops after writing the project and the keys locally, touching
-nothing on your Cloudflare account; `npx wrangler deploy` then `npx kukuroo init --resume`
-picks it up when you are ready.
+Every question also has a flag, including `--no-deploy` and `--resume` for setting things up
+before touching your Cloudflare account, and `rotate` for the send token and the invite code:
+[`npx kukuroo init --help`](scripts/init.mjs).
 
 ### Self-Hosted Module
 
@@ -73,6 +68,12 @@ Add the KV binding, `"kv_namespaces": [{ "binding": "KUKUROO_SUBS" }]`, whose na
 configurable; set `KUKUROO_NAVIGATE_ORIGIN`; then run `npx kukuroo init --secrets` from the
 directory holding that `wrangler.jsonc`. Serve the bundled page from any route of yours with
 the exported `enrollmentPage()`, or build your own UI against `POST /push/subscribe`.
+
+From inside that Worker, `send(env, options)` sends a notification with no token, since it
+already holds the bindings. [`KukurooEnv`](src/env.ts), [`MountOptions`](src/mount.ts), and
+[`SendOptions` and `SendResult`](src/send.ts) are documented where they are declared;
+`requireInvite: false` is the one to read before setting, since it opens enrollment to
+anyone who reaches the URL. `buildDeclarativePayload` and `importVapidKeys` are exported too.
 
 Kukuroo ships TypeScript source rather than a build, so your `tsconfig.json` needs
 `"allowImportingTsExtensions": true` or `tsc` reports errors from inside
@@ -122,16 +123,6 @@ curl -X POST https://push.example.com/push/send \
 ```
 
 `title` and `navigate` are required, and `icon`, if present, must be absolute.
-
-From inside your own Worker, `send(env, options)` does the same with no token, since it
-already holds the bindings. [`KukurooEnv`](src/env.ts), [`MountOptions`](src/mount.ts), and
-[`SendOptions` and `SendResult`](src/send.ts) are documented where they are declared;
-`requireInvite: false` is the one to read before setting, since it opens enrollment to
-anyone who reaches the URL.
-
-Also exported: `enrollmentPage(options)`, `buildDeclarativePayload`, and `importVapidKeys`.
-Rotate with `npx kukuroo rotate send-token` and `npx kukuroo rotate invite-code`; both read
-`kukuroo.credentials.json`, and neither re-enrolls anything.
 
 ## Alternatives
 
