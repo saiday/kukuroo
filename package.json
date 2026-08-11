@@ -1,6 +1,6 @@
 {
   "name": "kukuroo",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "A Cloudflare Worker as your self-hosted Web Push service: iOS push notifications with no server, no vendor, no native app.",
   "type": "module",
   "license": "MIT",

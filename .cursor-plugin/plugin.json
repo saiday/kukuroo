@@ -1,6 +1,6 @@
 {
   "name": "kukuroo",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Notify the user on their own phone, through their own Kukuroo Worker: a self-hosted Web Push service on Cloudflare, with no vendor in the path",
   "author": {
     "name": "Saiday",

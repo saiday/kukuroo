@@ -306,6 +306,64 @@ function b64urlToBytes(s) {
   return Uint8Array.from(atob(b64), c => c.charCodeAt(0));
 }
 
+/**
+ * Whether a subscription this browser already holds was created under the key
+ * the deployment serves today.
+ *
+ * Answering "no" costs the caller a subscription, so this answers "yes" only
+ * about bytes it has actually compared. A browser that does not expose
+ * PushSubscription.options gives it nothing to compare, and the caller must
+ * treat that as unknown rather than as a mismatch.
+ */
+function sameKey(held, wanted) {
+  if (!held) return false;
+  const bytes = new Uint8Array(held);
+  if (bytes.length !== wanted.length) return false;
+  return bytes.every((byte, i) => byte === wanted[i]);
+}
+
+/**
+ * Drop a subscription that was created under a VAPID key this deployment no
+ * longer has, so that subscribe() below has a clean slate to work on.
+ *
+ * A subscription is bound to the key that created it. Calling subscribe() with
+ * a different one does not replace it, it throws InvalidStateError: "Provided
+ * applicationServerKey does not match the key in the existing subscription."
+ * A device reaches that state whenever the deployment's keypair is replaced,
+ * which is the one and only way Kukuroo offers to move off a keypair, and it
+ * reaches it with no way out: the error repeats on every attempt, and the only
+ * remaining fix is deleting the installed app, which is not something an
+ * enrollment page can ask for.
+ *
+ * Unsubscribing loses nothing that still worked. The push service signs against
+ * the key that created the subscription, so one made under the old key already
+ * rejects everything this deployment sends. The row it left in the store is
+ * deleted by the next send, which prunes on 404 and 410.
+ *
+ * Returns whatever subscription this browser is still holding afterwards, for
+ * the caller to fall back on if subscribe() throws anyway.
+ */
+async function clearMismatchedSubscription(key) {
+  let existing = null;
+  try {
+    existing = await window.pushManager.getSubscription();
+  } catch {
+    return null;
+  }
+  if (existing === null) return null;
+
+  // Deliberately not "if we cannot tell, unsubscribe". Re-subscribing mints a
+  // fresh endpoint, so guessing wrong here silently re-enrolls a device that was
+  // fine and leaves its old row for a later send to sweep up. Where the key
+  // cannot be read, the mismatch is left to announce itself as a throw.
+  const held = existing.options ? existing.options.applicationServerKey : null;
+  if (held === null) return existing;
+  if (sameKey(held, key)) return existing;
+
+  await existing.unsubscribe();
+  return null;
+}
+
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
   const button = form.querySelector("button");
@@ -321,10 +379,27 @@ form.addEventListener("submit", async (event) => {
     if (!keyResponse.ok) throw new Error("could not read the server's VAPID public key");
     const { publicKey } = await keyResponse.json();
 
-    const subscription = await window.pushManager.subscribe({
+    const key = b64urlToBytes(publicKey);
+    const stillHeld = await clearMismatchedSubscription(key);
+
+    const subscribe = () => window.pushManager.subscribe({
       userVisibleOnly: true,
-      applicationServerKey: b64urlToBytes(publicKey),
+      applicationServerKey: key,
     });
+
+    let subscription;
+    try {
+      subscription = await subscribe();
+    } catch (error) {
+      // The mismatch the check above could not see, because this browser keeps
+      // PushSubscription.options to itself. Now it is not a guess: the browser
+      // has said which state it is in, so the subscription can go and the one
+      // attempt that was refused can be made again. Once. A second throw is
+      // about something else and belongs in front of the reader.
+      if (error.name !== "InvalidStateError" || stillHeld === null) throw error;
+      await stillHeld.unsubscribe();
+      subscription = await subscribe();
+    }
 
     const response = await fetch(SUBSCRIBE_PATH, {
       method: "POST",

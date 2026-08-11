@@ -322,11 +322,16 @@ export function mountKukuroo(options: MountOptions = {}): KukurooRoutes {
         if (request.method === "OPTIONS") return preflight(request, env, originsCache, "GET");
         const cors = corsFor(request, env, originsCache);
         if (request.method !== "GET") return json({ error: "method not allowed" }, 405, cors);
+        // Named before it is used, the same as on /send. An unset secret reaches
+        // importVapidKeys as undefined and dies in `.trim()`, which the catch
+        // below then reports as "the VAPID key is not usable" -- true of a
+        // corrupt key and of no key at all, and the operator cannot tell which.
+        // This is the worse route to be vague on: the enrollment page fetches it,
+        // so a skipped setup step surfaces on somebody's phone first.
+        const vapid = requireSecret(env.KUKUROO_VAPID_PRIVATE, "KUKUROO_VAPID_PRIVATE", cors);
+        if (vapid instanceof Response) return vapid;
         try {
-          const { publicKeyB64 } = await importVapidKeys(
-            env.KUKUROO_VAPID_PRIVATE,
-            env.KUKUROO_VAPID_PUBLIC,
-          );
+          const { publicKeyB64 } = await importVapidKeys(vapid, env.KUKUROO_VAPID_PUBLIC);
           return json({ publicKey: publicKeyB64 }, 200, cors);
         } catch (error) {
           console.error("kukuroo: VAPID key is not usable:", error);

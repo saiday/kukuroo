@@ -288,8 +288,24 @@ const noVapidSend = await kukuroo.handle(req("/push/send", {
   headers: { authorization: "Bearer token-token-token" },
   body: JSON.stringify({ notification: { title: "hi", navigate: "https://push.example.com/" } }),
 }), envNoVapid);
-ok("a missing VAPID key is a 503 on send, matching what public-key already said",
+ok("a missing VAPID key is a 503 on send that names the variable",
   noVapidSend.status === 503 && (await noVapidSend.json()).error.includes("KUKUROO_VAPID_PRIVATE"));
+
+// The route the enrollment page fetches, so this is where a skipped setup step
+// is actually met: on a phone, by somebody who did not configure the Worker.
+// It used to answer "the VAPID key on this Worker is not usable", which is what
+// a corrupt key says too, leaving the operator to guess which of the two it was.
+const noVapidKey = await kukuroo.handle(req("/push/public-key"), envNoVapid);
+const noVapidKeyBody = await noVapidKey.json();
+ok("public-key says the same thing, and names the same variable",
+  noVapidKey.status === 503 && noVapidKeyBody.error.includes("KUKUROO_VAPID_PRIVATE"));
+
+// A key that is present and broken must stay distinguishable from one that is
+// absent; collapsing the two is the bug above in the other direction.
+const badVapid = await kukuroo.handle(req("/push/public-key"),
+  { ...env, KUKUROO_VAPID_PRIVATE: "not-a-key" });
+ok("a present but unusable key still reports as unusable, not as missing",
+  badVapid.status === 503 && !(await badVapid.json()).error.includes("is not configured"));
 
 // ---- the gate opened on purpose ---------------------------------------------
 // `requireInvite: false` is the answer to "is this deployment personal?". It has
@@ -384,6 +400,77 @@ for (const [label, page] of [["gated", gatedPage], ["open", openPage]]) {
     complaint = String(error.stderr ?? "").split("\n").slice(0, 3).join(" ");
   }
   ok(`the ${label} page's client JavaScript parses${parsed ? "" : `: ${complaint}`}`, parsed);
+}
+
+// ---- the page's repair of a subscription made under an older VAPID key ------
+//
+// subscribe() does not replace a subscription created under a different key, it
+// throws InvalidStateError. So a device whose deployment has been re-keyed can
+// never enroll again from this page, however many times it taps the button, and
+// the only fix left is deleting the installed app. The page reads the held key
+// and drops the subscription first.
+//
+// Lifted out of the page source and run here because the alternative is trusting
+// a substring, and a substring cannot tell "unsubscribes a stale subscription"
+// from "unsubscribes whatever it finds", which would silently re-enroll working
+// devices under new endpoints. The slice is the two functions, which sit between
+// b64urlToBytes and the submit handler.
+{
+  const source = gatedPage.slice(
+    gatedPage.indexOf(">", gatedPage.indexOf("<script")) + 1,
+    gatedPage.indexOf("</scr" + "ipt"),
+  );
+  const region = source.slice(
+    source.indexOf("function sameKey"),
+    source.indexOf('form.addEventListener("submit"'),
+  );
+  // `window` is a parameter rather than a global, so each case gets its own
+  // browser and nothing here has to be undone afterwards.
+  const helpersFor = (window) => new Function(
+    "window",
+    region + "\nreturn { sameKey, clearMismatchedSubscription };",
+  )(window);
+  const { sameKey } = helpersFor(undefined);
+
+  const key = Uint8Array.from([1, 2, 3, 4]);
+  ok("sameKey matches identical bytes", sameKey(Uint8Array.from(key).buffer, key));
+  ok("sameKey rejects different bytes", !sameKey(Uint8Array.from([1, 2, 3, 5]).buffer, key));
+  ok("sameKey rejects a different length", !sameKey(Uint8Array.from([1, 2, 3]).buffer, key));
+  ok("sameKey rejects a key it was not given", !sameKey(null, key));
+
+  // `options` is what the browser reports the subscription was created with;
+  // undefined stands for the browsers that do not expose it at all.
+  const held = (options) => {
+    const subscription = { options, unsubscribed: false };
+    subscription.unsubscribe = async () => { subscription.unsubscribed = true; };
+    return subscription;
+  };
+  const clearWith = (subscription) => helpersFor({
+    pushManager: {
+      async getSubscription() {
+        if (subscription === "throws") throw new Error("no getSubscription here");
+        return subscription;
+      },
+    },
+  }).clearMismatchedSubscription(key);
+
+  ok("nothing held means nothing to repair", (await clearWith(null)) === null);
+  ok("a browser that cannot be asked is left alone", (await clearWith("throws")) === null);
+
+  const current = held({ applicationServerKey: Uint8Array.from(key).buffer });
+  ok("a subscription under the current key survives",
+    (await clearWith(current)) === current && !current.unsubscribed);
+
+  const stale = held({ applicationServerKey: Uint8Array.from([9, 9, 9, 9]).buffer });
+  ok("a subscription under an older key is dropped",
+    (await clearWith(stale)) === null && stale.unsubscribed);
+
+  // Not dropped on suspicion: re-subscribing mints a new endpoint, so guessing
+  // here would re-enroll healthy devices and orphan their rows. It is handed
+  // back instead, for the submit handler to unsubscribe if subscribe() throws.
+  const opaque = held(undefined);
+  ok("a subscription whose key cannot be read is handed back, not dropped",
+    (await clearWith(opaque)) === opaque && !opaque.unsubscribed);
 }
 
 // ---- the navigate origin, when nobody configured one -----------------------

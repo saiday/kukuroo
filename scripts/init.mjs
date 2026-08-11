@@ -1019,8 +1019,16 @@ function npmInstall(dir) {
 /**
  * Generate every secret and install it, in the order that survives a failure.
  * Returns the credentials so the caller can print the summary its shape needs.
+ *
+ * `upload: false` stops after the local file. It exists because uploading is not
+ * a neutral act: `wrangler secret bulk` against a Worker that does not exist
+ * *creates* it, so the upload is what puts a script on the account and claims
+ * the workers.dev hostname. A run that was told not to deploy, or that could not
+ * ask, must not do that behind the operator's back. The keys are still generated
+ * and still written here, because the file is the thing that must exist before
+ * anything else can go wrong; `--resume` uploads it when they are ready.
  */
-async function provisionSecrets() {
+async function provisionSecrets({ upload = true } = {}) {
   if (existsSync(credentialsPath())) {
     die(
       `${credentialsPath()} already exists.\n\n` +
@@ -1032,8 +1040,11 @@ async function provisionSecrets() {
     );
   }
 
+  // Probed either way: a Worker that already holds a VAPID key must stop this
+  // run whether or not this run is the one that would upload over it, because
+  // the local file it writes is what `--resume` uploads later.
   const deployed = existingSecretNames();
-  if (deployed === null) {
+  if (deployed === null && upload) {
     console.log("No Worker deployed yet. `wrangler secret bulk` will create a draft one.");
   }
 
@@ -1069,7 +1080,7 @@ async function provisionSecrets() {
   // above would then refuse the retry: the safe would be locked with the only
   // key inside it.
   writeCredentials(credentials);
-  uploadSecrets(credentials);
+  if (upload) uploadSecrets(credentials);
   return credentials;
 }
 
@@ -1152,7 +1163,11 @@ async function standaloneSetup(dir, answers, { shouldDeploy, link }) {
   workDir = target;
   npmInstall(dir);
 
-  const credentials = await provisionSecrets();
+  // Not uploaded unless this run is also deploying. The upload is what creates
+  // the Worker, so doing it here would make --no-deploy a deploy by another
+  // name: a script on the account, holding live secrets, on a hostname now
+  // claimed, for an operator who asked to read the code before any of that.
+  const credentials = await provisionSecrets({ upload: shouldDeploy });
 
   const liveOrigin = shouldDeploy ? deployStandalone(answers) : null;
 
@@ -1190,10 +1205,16 @@ async function standaloneSetup(dir, answers, { shouldDeploy, link }) {
   }
 
   if (!shouldDeploy) {
-    steps.push(`Deploy it.
+    steps.push(`Deploy it, then install the secrets.
 
      cd ${dir}
-     npx wrangler deploy`);
+     npx wrangler deploy
+     npx kukuroo init --resume
+
+   Nothing of yours is on Cloudflare yet: no Worker, no secrets, and no
+   hostname claimed, until that first deploy. The keys exist only in
+   ${dir}/kukuroo.credentials.json, and --resume is what uploads them to the
+   Worker the deploy just created.`);
   }
 
   steps.push(
@@ -1222,7 +1243,7 @@ async function standaloneSetup(dir, answers, { shouldDeploy, link }) {
 ${
   shouldDeploy
     ? "Done, and deployed."
-    : `Done. ${dir} is a deployable Worker, and every secret is installed.`
+    : `Done. ${dir} is a deployable Worker, and its keys are on this disk only.`
 }
 
 ${facts(headline)}

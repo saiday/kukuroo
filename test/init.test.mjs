@@ -218,6 +218,31 @@ const linked = runInit(["--no-deploy", "--workers-dev", "--link"]);
 
 ok("a linked init runs to the end", !linked.failed);
 if (linked.failed) console.log(linked.output);
+
+// --no-deploy must touch nothing on the account, and "nothing" has to include
+// the secret upload. `wrangler secret bulk` against a Worker that does not exist
+// creates it, so uploading here would put a live script on somebody's Cloudflare
+// account, holding real secrets, on a claimed workers.dev hostname, from a run
+// that was told to stop before any of that. It read as safe because no `deploy`
+// appeared in the log, which is exactly why the assertion is on the whole log.
+// `whoami` and `secret list` are reads: the first settles which account is being
+// talked about, the second is the guard that refuses to generate a second VAPID
+// key for a Worker already holding one. Everything else changes something.
+const READS = ["npx wrangler whoami", "npx wrangler secret list"];
+const writes = linked.calls.filter((c) => !READS.includes(c) && !c.startsWith("npm "));
+ok(`--no-deploy writes nothing to the account (${JSON.stringify(writes)})`,
+  writes.length === 0);
+ok("and still runs the read that guards against clobbering an existing key",
+  linked.calls.includes("npx wrangler secret list"));
+ok("--no-deploy still writes the credentials file, which is the only copy",
+  readFileSync(linked.credentialsPath, "utf8").includes("vapidPrivateKey"));
+ok("and says the keys are local rather than installed",
+  linked.output.includes("its keys are on this disk only"));
+ok("and names both commands that finish the job, in the order that works",
+  linked.output.includes("npx wrangler deploy") &&
+    linked.output.includes("npx kukuroo init --resume") &&
+    linked.output.indexOf("npx wrangler deploy") <
+      linked.output.indexOf("npx kukuroo init --resume"));
 ok("--link depends on the checkout that wrote the project",
   JSON.parse(readFileSync(linked.packagePath, "utf8")).dependencies.kukuroo === `file:${repo}`);
 ok("and says so where it says everything else it wrote",

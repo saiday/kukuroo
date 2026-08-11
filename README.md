@@ -43,8 +43,10 @@ curl -X POST https://push.example.com/push/send \
 ```
 
 Every question also has a flag, so nothing has to be answered interactively: `npx kukuroo
-init --help`. `--no-deploy` sets everything up and stops, if you would rather read the
-generated Worker before it goes live.
+init --help`. `--no-deploy` sets everything up on disk and stops, if you would rather read
+the generated Worker before it goes live: the keys are generated and written locally, and
+nothing reaches your Cloudflare account, so `npx wrangler deploy` followed by `npx kukuroo
+init --resume` is what creates the Worker and installs the secrets when you are ready.
 
 ## Two values worth settling first
 
