@@ -48,42 +48,15 @@ the generated Worker before it goes live: the keys are generated and written loc
 nothing reaches your Cloudflare account, so `npx wrangler deploy` followed by `npx kukuroo
 init --resume` is what creates the Worker and installs the secrets when you are ready.
 
-## Two values worth settling first
+### Self-Hosted Module
 
-Both are fixed once a device has enrolled. Changing either is not destructive, but it does
-mean enrolling every device again by hand, and the two fail for different reasons.
+**Standalone** is what `init` scaffolds: Kukuroo as its own Worker at its own address,
+serving the enrollment page it ships with. Pick it when you do not already run a Cloudflare
+Worker. Your website is not involved at all; it only needs the send token and a POST to
+`/push/send`. Answering **no** to the bundled front end keeps the same shape but routes no
+enrollment page, so you serve your own UI and add its origin to `KUKUROO_ALLOWED_ORIGINS`.
 
-- **The VAPID keypair.** The push service binds your public key to each subscription when
-  it is created, and checks every send's signature against that stored key. Sign with a new
-  keypair and it answers 401 or 403, so nothing is delivered. `kukuroo init` generates the
-  keypair once and writes it to `kukuroo.credentials.json`, which is the only copy of it.
-- **The origin devices enroll on.** The push service never sees or checks this, so devices
-  already enrolled keep receiving after a move. What you lose is your own side of it: a page
-  on a different origin cannot read or repair subscriptions created on the old one, so you
-  can neither re-subscribe nor verify them, and a notification click navigates to an address
-  you no longer serve. This is why `init` asks before it deploys. Leave
-  `preview_urls: false` too, because a preview URL is a real enrollable origin and it is
-  *per version*.
-
-The send token and the invite code are bound to nothing and rotate freely.
-
-## Standalone
-
-Kukuroo runs as its own Worker at its own address, serving the enrollment page it ships
-with. Nothing to build and nothing to write: `init` scaffolds the project, and the origin is
-whatever you put in `wrangler.jsonc`.
-
-This is the shape to pick when you do not already run a Cloudflare Worker, or when push can
-live at its own address away from your site. Your website, wherever it is hosted, is not
-involved at all: it only needs to hold the send token and POST to `/push/send` when
-something happens.
-
-Answering **no** to the bundled front end keeps the same shape but routes no enrollment page,
-so you serve your own UI and add its origin to `KUKUROO_ALLOWED_ORIGINS`.
-
-## Mounted
-
-Mounting puts the push routes inside a Worker you already run, so they share your site's
+**Mounted** puts the push routes inside a Worker you already run, so they share your site's
 origin and a notification click lands back inside your site.
 
 ```ts
@@ -106,27 +79,14 @@ configurable; set `KUKUROO_NAVIGATE_ORIGIN`; then run `npx kukuroo init --secret
 directory holding that `wrangler.jsonc`. Serve the bundled page from any route of yours with
 the exported `enrollmentPage()`, or build your own UI against `POST /push/subscribe`.
 
-Kukuroo ships TypeScript source rather than a build, because it only ever runs inside a
-Workers bundle. Your `tsconfig.json` needs `"allowImportingTsExtensions": true` to follow
-its imports, or `tsc` reports errors from inside `node_modules/kukuroo`; wrangler's esbuild
-needs no help. The scaffolded project sets this already.
+Kukuroo ships TypeScript source rather than a build, so your `tsconfig.json` needs
+`"allowImportingTsExtensions": true` or `tsc` reports errors from inside
+`node_modules/kukuroo`. The scaffolded project sets this already.
 
-Mounting is not the only way to get enrollment onto your own hostname, and Kukuroo does not
-have to live on your domain at all. The only thing that matters is which origin devices
-enroll on:
-
-| Your setup | How enrollment happens on your own origin |
-|---|---|
-| Your site is a Cloudflare Worker | mount, as above |
-| Your site's DNS is on Cloudflare, hosted anywhere | a standalone Worker on a route: `{ "pattern": "www.example.com/push/*", "zone_name": "example.com" }` |
-| You run a proxy or CDN in front of your site | proxy `/push/*` to the Worker's `workers.dev` address |
-| A static site, DNS elsewhere | set `KUKUROO_ALLOWED_ORIGINS` and call the Worker's absolute URLs from the browser |
-
-Two traps in that table. The proxy row needs a real proxy that rewrites the `Host` header; a
-bare DNS CNAME pointed at `workers.dev` is not one, and fails at Cloudflare's edge. And
-`/push/send` never receives CORS headers whatever `KUKUROO_ALLOWED_ORIGINS` says, because
-the send token is a server secret and a page holding one should fail its first test rather
-than work quietly.
+Mounting is not the only way to get enrollment onto your own hostname: a standalone Worker
+on a route (`{ "pattern": "www.example.com/push/*", "zone_name": "example.com" }`) reaches
+the same place, and so does a real proxy in front of your site, one that rewrites the `Host`
+header rather than a bare DNS CNAME. All that matters is which origin devices enroll on.
 
 ## Agents
 
@@ -173,57 +133,13 @@ GET  /push/enroll      open           the bundled enrollment page (standalone on
 `/push/send` does one encrypt-and-sign per subscription inside a single invocation, which
 has [a ceiling on the free plan](docs/free-plan-device-limits.md).
 
-```ts
-interface KukurooEnv {
-  KUKUROO_SUBS:             KVNamespace
-  KUKUROO_VAPID_PRIVATE:    string   // Worker Secret. A JWK, PKCS#8 DER, or a bare scalar
-  KUKUROO_SEND_TOKEN:       string   // Worker Secret
-  KUKUROO_INVITE_CODE:      string   // Worker Secret
-  KUKUROO_VAPID_PUBLIC?:    string   // only if the key is a bare 32-byte scalar
-  KUKUROO_NAVIGATE_ORIGIN?: string   // the three below are described under this block
-  KUKUROO_ALLOWED_ORIGINS?: string
-  KUKUROO_VAPID_SUBJECT?:   string
-}
-
-const kukuroo = mountKukuroo({
-  prefix: "/push",          // where the route set lives. Default "/push"
-  standalone: false,        // serve the bundled enrollment page at <prefix>/enroll
-  requireInvite: true,      // demand the code on <prefix>/subscribe. Default true
-})
-await kukuroo.handle(request, env)   // Response, or null if the path is not ours
-```
-
-`requireInvite` is the one option that is a decision rather than a detail. Off, enrollment is
-open to anyone who reaches the URL, and everyone who enrolls receives everything you send.
-Only an explicit `false` opens it, and `KUKUROO_INVITE_CODE` is generated and installed
-either way, so closing an open gate is one word and a deploy, with nothing re-enrolling.
-
-Three optional vars:
-
-- `KUKUROO_NAVIGATE_ORIGIN`: every notification's `navigate` must be on this origin; a
-  `navigate` that leaves it ejects the user out of the installed web app and into a browser
-  tab. With `standalone: true` you can leave it unset: that deployment serves the enrollment
-  page, so it *is* the origin devices enroll on and it reads that off each request. **Set it
-  everywhere else**, and set it here too if you want enforcement pinned to a name this
-  Worker does not answer on. It does not restrict `icon`, which legitimately points at a CDN.
-- `KUKUROO_ALLOWED_ORIGINS`: comma-separated exact origins whose pages may call `subscribe`
-  and `public-key` from the browser. Unset, no CORS headers are sent. There is no wildcard.
-- `KUKUROO_VAPID_SUBJECT`: the VAPID `sub` claim, a `mailto:` or `https:` URI. Defaults to
-  the push service's own origin, which is accepted but identifies nobody.
-
 Sending from inside your own Worker needs no token, since it already holds the bindings:
 
 ```ts
 import { send } from "kukuroo";
 
 const result = await send(env, {
-  notification: {
-    title: "Deploy finished",
-    body: "main to production, 42s",
-    navigate: "https://push.example.com/deploys",  // required, and absolute
-    tag: "deploys",                                // replaces its predecessor
-  },
-  appBadge: 1,
+  notification: { title: "Deploy finished", navigate: "https://push.example.com/deploys" },
 });
 
 if (result.delivered === 0) throw new Error("no devices are enrolled");
@@ -231,9 +147,13 @@ if (result.delivered === 0) throw new Error("no devices are enrolled");
 
 `navigate` and a non-empty `title` are required, and an `icon`, if present, must be an
 absolute URL. Get any of them wrong and WebKit discards the whole message with no error
-anywhere, so Kukuroo rejects them before sending. `delivered` counts subscriptions the push
-service accepted the message for, which is not the same as displayed on a device; a
-`delivered` of 0 is a failure, not a quiet success.
+anywhere, so Kukuroo rejects them before sending.
+
+Every binding is documented where it is declared, [`KukurooEnv` in `src/env.ts`](src/env.ts),
+as are [`MountOptions`](src/mount.ts) and [`SendOptions` and `SendResult`](src/send.ts).
+The one option that is a decision rather than a detail is `requireInvite`: off, enrollment
+is open to anyone who reaches the URL, and everyone who enrolls receives everything you
+send.
 
 Also exported: `enrollmentPage(options)`, `buildDeclarativePayload`, and `importVapidKeys`.
 The send token and invite code rotate with `npx kukuroo rotate send-token` and `npx kukuroo

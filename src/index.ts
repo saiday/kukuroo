@@ -6,9 +6,9 @@
  *   mountKukuroo({ prefix: "/push" })   route set for a host Worker
  *   send(env, { notification })         one call, fans out over every device
  *
- * See README.md for the two things that are permanent. They are permanent
- * because getting either wrong destroys every subscription silently, and
- * silence is exactly what this module exists to make impossible.
+ * Two things are permanent once a device has enrolled: the VAPID keypair and
+ * the origin devices enroll on. Changing either strands every subscription
+ * silently, and silence is what this module exists to make impossible.
  */
 
 export { importVapidKeys, type VapidKeys } from "./vapid.ts";
