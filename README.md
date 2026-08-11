@@ -2,14 +2,13 @@
 
 Your own Web Push service, on a Cloudflare Worker.
 
-There is no server to keep alive and no notification vendor in the path: you hold the keys, and the push service relays
-ciphertext it cannot read.
+There is no server to keep alive and no notification vendor in the path: you hold the keys,
+and the push service relays ciphertext it cannot read.
 
-It uses **Declarative Web Push**, which so far has only shipped in Safari, so receiving
+Kukuroo uses **Declarative Web Push**, which so far has only shipped in Safari, so receiving
 needs an iPhone or iPad on iOS 18.4+, or macOS Safari 18.5+. Chrome, Firefox, and Android
 cannot enroll. Sending works from anything that can make a request: curl, cron, CI, or a
 backend you already run.
-
 
 ## Install
 
@@ -24,8 +23,8 @@ domain you have on Cloudflare, fixed once a device has enrolled. Back up
 
 On the device: open that origin in Safari, **Add to Home Screen**, and open it **from the
 icon** to allow notifications. A Safari tab does not work on iOS; [the enrollment
-guide](docs/create-pwa-and-subscribe-to-push.md) has the rest. A notification is then one
-request:
+guide](docs/create-pwa-and-subscribe-to-push.md) has the rest. From then on, a notification
+is one request:
 
 ```sh
 curl -X POST https://push.example.com/push/send \
@@ -42,9 +41,9 @@ before touching your Cloudflare account, and `rotate` for the send token and the
 
 **Standalone** is what `init` scaffolds: Kukuroo as its own Worker at its own address,
 serving the enrollment page it ships with. Pick it when you do not already run a Cloudflare
-Worker. Your website is not involved at all; it only needs the send token and a POST to
-`/push/send`. Answering **no** to the bundled front end keeps the same shape but routes no
-enrollment page, so you serve your own UI and add its origin to `KUKUROO_ALLOWED_ORIGINS`.
+Worker. Your website only needs the send token and a POST to `/push/send`. Answering **no**
+to the bundled front end keeps the same shape but routes no enrollment page, so you serve
+your own UI and add its origin to `KUKUROO_ALLOWED_ORIGINS`.
 
 **Mounted** puts the push routes inside a Worker you already run, so they share your site's
 origin and a notification click lands back inside your site.
@@ -79,12 +78,11 @@ Kukuroo ships TypeScript source rather than a build, so your `tsconfig.json` nee
 `"allowImportingTsExtensions": true` or `tsc` reports errors from inside
 `node_modules/kukuroo`. The scaffolded project sets this already.
 
-Mounting is not the only way to get enrollment onto your own hostname: a standalone Worker
-on a route (`{ "pattern": "www.example.com/push/*", "zone_name": "example.com" }`) reaches
-the same place, and so does a real proxy in front of your site, one that rewrites the `Host`
-header rather than a bare DNS CNAME. All that matters is which origin devices enroll on.
+Enrollment can also reach your own hostname through a Worker route or a real proxy that
+rewrites `Host`; a bare DNS CNAME will not do. All that matters is which origin devices
+enroll on.
 
-## Agent Skill for sending push notification
+## Agent Skill
 
 Your coding agent can send these, which is most of the point of having a phone in the
 loop. For Claude Code that is a plugin, and this repository is its own marketplace:
@@ -94,7 +92,8 @@ claude plugin marketplace add saiday/kukuroo
 claude plugin install kukuroo@kukuroo
 ```
 
-setup env in Claude code for first time:
+Set the environment up once per machine:
+
 ```sh
 /kukuroo:kukuroo-setup
 ```
