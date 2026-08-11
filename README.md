@@ -113,7 +113,7 @@ GET  /push/public-key  open           the VAPID public key, for the client
 GET  /push/enroll      open           the bundled enrollment page (standalone only)
 ```
 
-`/push/send` takes the notification and reports what became of it:
+`/push/send` takes the notification:
 
 ```sh
 curl -X POST https://push.example.com/push/send \
