@@ -96,19 +96,10 @@ claude plugin marketplace add saiday/kukuroo
 claude plugin install kukuroo@kukuroo
 ```
 
-From then on "ping me on my phone when the tests finish" works in any project, and so
-does naming a time. Setup is two questions, asked the first time it fires on a machine:
-the origin and the send token. It caches the answers in `~/.config/kukuroo/env` at 0600,
-never the VAPID key. That file is shell-sourceable, so no later send has to name the
-token:
-
-```sh
-set -a; . ~/.config/kukuroo/env; set +a
-curl -fsS -X POST "$KUKUROO_ORIGIN/push/send" -H "authorization: Bearer $KUKUROO_SEND_TOKEN" ...
-```
-
-Cursor and anything else that reads a rules file gets the same contract from
-`rules/kukuroo.mdc`.
+From then on "ping me on my phone when the tests finish" works in any project. Setup is
+two questions, asked the first time it fires on a machine: the origin and the send token,
+cached in `~/.config/kukuroo/env`. Cursor and anything else that reads a rules file gets
+the same instructions from `rules/kukuroo.mdc`.
 
 [The agents guide](docs/agents.md) covers the rest: what makes it fire, what it is told
 about the payload, and why a scheduled push needs the session to stay open.
@@ -122,33 +113,37 @@ GET  /push/public-key  open           the VAPID public key, for the client
 GET  /push/enroll      open           the bundled enrollment page (standalone only)
 ```
 
-`/push/send` does one encrypt-and-sign per subscription inside a single invocation, which
-has [a ceiling on the free plan](docs/free-plan-device-limits.md).
+`/push/send` takes the notification and reports what became of it:
 
-Sending from inside your own Worker needs no token, since it already holds the bindings:
-
-```ts
-import { send } from "kukuroo";
-
-const result = await send(env, {
-  notification: { title: "Deploy finished", navigate: "https://push.example.com/deploys" },
-});
-
-if (result.delivered === 0) throw new Error("no devices are enrolled");
+```sh
+curl -X POST https://push.example.com/push/send \
+  -H "authorization: Bearer $SEND_TOKEN" \
+  -H 'content-type: application/json' \
+  -d '{"notification":{"title":"Deploy finished","body":"api v2.3.1 is live","tag":"deploys","navigate":"https://push.example.com/deploys"}}'
 ```
 
-`navigate` and a non-empty `title` are required, and an `icon`, if present, must be an
-absolute URL. WebKit discards a message that breaks any of these without an error anywhere,
-so Kukuroo rejects them before sending.
+```json
+{"delivered":3,"removed":1,"failures":[]}
+```
 
-Every binding is documented where it is declared, [`KukurooEnv` in `src/env.ts`](src/env.ts),
-as are [`MountOptions`](src/mount.ts) and [`SendOptions` and `SendResult`](src/send.ts). One
-option is worth reading before you set it: `requireInvite: false` opens enrollment to anyone
-who reaches the URL, and everyone who enrolls receives everything you send.
+`delivered` counts devices the push service accepted the message for, so a `0` arrives with
+a 200 and still means nothing reached a phone. `removed` were dead subscriptions, now
+deleted.
+
+`title` and `navigate` are required, and `icon`, if present, must be absolute. WebKit
+discards a payload that breaks any of these without an error anywhere, so Kukuroo rejects it
+first. Each subscription costs one encrypt-and-sign inside a single invocation, which has
+[a ceiling on the free plan](docs/free-plan-device-limits.md).
+
+From inside your own Worker, `send(env, options)` does the same with no token, since it
+already holds the bindings. [`KukurooEnv`](src/env.ts), [`MountOptions`](src/mount.ts), and
+[`SendOptions` and `SendResult`](src/send.ts) are documented where they are declared;
+`requireInvite: false` is the one to read before setting, since it opens enrollment to
+anyone who reaches the URL.
 
 Also exported: `enrollmentPage(options)`, `buildDeclarativePayload`, and `importVapidKeys`.
-The send token and invite code rotate with `npx kukuroo rotate send-token` and `npx kukuroo
-rotate invite-code`; both read `kukuroo.credentials.json`, and neither re-enrolls anything.
+Rotate with `npx kukuroo rotate send-token` and `npx kukuroo rotate invite-code`; both read
+`kukuroo.credentials.json`, and neither re-enrolls anything.
 
 ## Alternatives
 
