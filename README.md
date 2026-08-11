@@ -2,8 +2,8 @@
 
 Your own Web Push service, on a Cloudflare Worker.
 
-There is no server to keep alive and no notification vendor in the path: you hold the keys,
-and the push service relays ciphertext it cannot read.
+There is no server to keep alive, no notification vendor in the path, and no app to install:
+you hold the keys, and the push service relays ciphertext it cannot read.
 
 Kukuroo uses **Declarative Web Push**, which so far has only shipped in Safari, so receiving
 needs an iPhone or iPad on iOS 18.4+, or macOS Safari 18.5+. Chrome, Firefox, and Android
