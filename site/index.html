@@ -320,8 +320,9 @@
   <section>
     <div class="wrap">
       <h2>Send a push notification in seconds</h2>
-      <p class="pitch">From cron, CI, a Raspberry Pi, your backend, a shell alias.
-      <b>Anything that can make an HTTP call can ring your phone.</b></p>
+      <p class="pitch">From the agent you left running, the moment it finishes
+      or stops to ask. From cron, CI, a Raspberry Pi, your backend, a shell
+      alias. <b>Anything that can make an HTTP call can ring your phone.</b></p>
       <div class="term">
         <div class="term-bar"><span class="dots" aria-hidden="true"></span><span class="title">bash</span></div>
         <pre class="term-body"><span class="pmt">$ </span>curl -X POST https://push.example.com/push/send \
@@ -423,9 +424,11 @@ return new Response(enrollmentPage({
         opened from the icon. A Safari tab will not do, and that is Apple's rule
         rather than ours. macOS Safari 18.5 receives too, if you can think of a
         reason to want it.</li>
-        <li><b>About 50 devices per send</b> if you are on a free-plan Worker.
-        That is the subrequest ceiling, and about 47 more phones than one person
-        owns.</li>
+        <li><b>A Cloudflare account.</b> Push and Workers suit each other
+        unusually well, and the free plan carries a personal setup without
+        noticing: 50 devices per send, 100,000 requests a day. If it ever grows
+        past you, $5 a month takes that to 10,000 devices per send and 10
+        million requests.</li>
       </ul>
     </div>
   </section>
