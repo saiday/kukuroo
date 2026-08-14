@@ -33,20 +33,19 @@ curl -X POST https://push.example.com/push/send \
   -d '{"notification":{"title":"hello","navigate":"https://push.example.com/"}}'
 ```
 
+That is Kukuroo standalone: its own Worker at its own address, serving the enrollment page
+it ships with. Your own site needs nothing but the send token and that POST. Answering
+**no** to the bundled front end keeps the same shape but routes no enrollment page, so you
+serve your own UI and add its origin to `KUKUROO_ALLOWED_ORIGINS`.
+
 Every question also has a flag, including `--no-deploy` and `--resume` for setting things up
 before touching your Cloudflare account, and `rotate` for the send token and the invite code:
 [`npx kukuroo init --help`](scripts/init.mjs).
 
-### Self-Hosted Module
+### Mounting it in a Worker you already run
 
-**Standalone** is what `init` scaffolds: Kukuroo as its own Worker at its own address,
-serving the enrollment page it ships with. Pick it when you do not already run a Cloudflare
-Worker. Your website only needs the send token and a POST to `/push/send`. Answering **no**
-to the bundled front end keeps the same shape but routes no enrollment page, so you serve
-your own UI and add its origin to `KUKUROO_ALLOWED_ORIGINS`.
-
-**Mounted** puts the push routes inside a Worker you already run, so they share your site's
-origin and a notification click lands back inside your site.
+Mounted instead of standalone: the push routes live inside a Worker you already have, so
+they share your site's origin and a notification click lands back inside your site.
 
 ```ts
 import { mountKukuroo, type KukurooEnv } from "kukuroo";
