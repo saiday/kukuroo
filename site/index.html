@@ -92,6 +92,9 @@
   }
   .btn.ghost { border: 1.5px solid var(--rule); color: var(--ink); }
   .btn.ghost:hover { border-color: var(--azure); }
+  /* The demo is a real device enrolling, so the platform it needs belongs
+     next to the button rather than four screens further down. */
+  .cta-note { margin-top: .85rem; max-width: 29rem; font-size: .85rem; color: var(--feather); }
 
   /* ---------- the phone: a day of alerts, arriving ---------- */
   /* Everything inside the bezel is fixed-colour on purpose. The screen is its
@@ -244,8 +247,10 @@
       </ul>
       <div class="cta-row">
         <a class="btn solid" href="#install">Install Kukuroo</a>
-        <a class="btn ghost" href="https://demo.kukuroo.cc/" target="_blank" rel="noopener">Try it on your iPhone</a>
+        <a class="btn ghost" href="https://demo.kukuroo.cc/" target="_blank" rel="noopener">Try demo</a>
       </div>
+      <p class="cta-note">Best on an iPhone running iOS 18.4 or later. macOS
+      Safari 18.5 receives too, and nowhere else does yet.</p>
     </div>
 
     <div class="phone" role="img"
