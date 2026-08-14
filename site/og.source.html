@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<!--
+  The source for og.png, the card that appears when kukuroo.cc is shared.
+
+  This file is not part of the site. It exists because og.png is a binary that
+  nobody can edit, and a headline that changes on index.html has to be able to
+  change here too. Re-cut it with:
+
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+      --headless --disable-gpu --hide-scrollbars --force-device-scale-factor=1 \
+      --window-size=1200,630 --screenshot=site/og.png \
+      --virtual-time-budget=2000 site/og.source.html
+
+  Then check the result is still 1200x630 and under 1MB, which is the size that
+  keeps a preview from timing out on a slow connection.
+
+  Two things here deliberately differ from the page, and both are about surviving
+  the scale-down. A card is 372px wide in a Slack column, so:
+
+  - The headline breaks over three lines. At the page's own break, "Self-hosted
+    web push worker," has to sit at ~41px to fit beside the device, which is 12px
+    once Slack is done with it.
+  - The notifications sit under the clock rather than pinned to the bottom of the
+    screen, because the device is bled off the bottom edge and the page's
+    `margin-top: auto` would push them off the card entirely.
+
+  Everything else is the light-mode palette from index.html, and the device is
+  that file's own markup at scale(1.5), so every radius and inset stays in the
+  proportion the page ships.
+-->
+<style>
+  :root {
+    --ink: #0f1b2a;
+    --feather: #55677e;
+    --azure-bright: #4da3ff;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    --term-bg: #0b1420;
+    --term-edge: #1d2d3f;
+    --term-fg: #d5e2f2;
+  }
+  * { box-sizing: border-box; margin: 0; }
+
+  body {
+    width: 1200px; height: 630px; overflow: hidden; position: relative;
+    background: #f2f6fb;
+    font: 17px/1.6 var(--sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  /* A single azure bloom behind the device, so the right half has depth without
+     anything for a crawler's crop to destroy. */
+  body::before {
+    content: ""; position: absolute; inset: 0;
+    background: radial-gradient(58rem 40rem at 78% 18%, rgba(11, 98, 214, .13), transparent 68%);
+  }
+
+  .card { position: relative; height: 100%; padding: 60px 72px; display: flex; flex-direction: column; }
+
+  .mark {
+    font: 700 22px var(--mono); letter-spacing: .18em; text-transform: uppercase;
+    color: var(--feather);
+  }
+
+  h1 {
+    margin-top: 30px;
+    font: 800 62px/1.12 var(--mono); letter-spacing: -.03em; color: var(--ink);
+    max-width: 700px;
+  }
+  h1 .quiet { color: var(--feather); }
+
+  .lede { margin-top: 26px; font-size: 25px; color: #3d5068; max-width: 640px; }
+
+  /* The install line, set as the terminal fragment it is. The one piece of the
+     card that stays legible at any size, and the cheapest proof that the claim
+     above it is easy to act on. */
+  .chip {
+    margin-top: auto; align-self: flex-start;
+    background: var(--term-bg); border: 1px solid var(--term-edge);
+    border-radius: 10px; padding: 14px 20px;
+    font: 500 23px var(--mono); color: var(--term-fg);
+  }
+  .chip .pmt { color: var(--azure-bright); }
+
+  /* ---------- the device, bled off the bottom edge ---------- */
+  .phone-zone {
+    position: absolute; top: 46px; right: 76px;
+    transform: scale(1.5); transform-origin: top center;
+  }
+  .phone {
+    width: 252px; padding: .5rem; border-radius: 2.5rem;
+    background: linear-gradient(155deg, #454f5f, #171d26 38%, #2b3441);
+    box-shadow: 0 26px 55px rgba(11, 30, 54, .30), 0 0 0 1px rgba(255, 255, 255, .07);
+  }
+  .screen {
+    position: relative; aspect-ratio: 9 / 19.5; overflow: hidden;
+    border-radius: 2.1rem; padding: .75rem .5rem 1.4rem;
+    background: linear-gradient(168deg, #1d3d63 0%, #0d1725 52%, #1a2c45 100%);
+    display: flex; flex-direction: column;
+  }
+  .island { width: 5rem; height: 1.05rem; border-radius: 1rem; background: #050907; margin: 0 auto; }
+  .lock { text-align: center; color: #fff; margin-top: 1.5rem; }
+  .lock .date { font: 500 .72rem var(--sans); opacity: .85; }
+  .lock .clock { font: 250 3.1rem/1.05 var(--sans); letter-spacing: -.02em; }
+
+  .moments { display: grid; gap: .4rem; margin-top: 1.7rem; }
+  .notif {
+    border-radius: .85rem; padding: .5rem .55rem; color: #fff;
+    background: rgba(255, 255, 255, .16);
+    display: grid; grid-template-columns: auto 1fr auto; gap: .45rem; align-items: start;
+  }
+  .notif .appicon {
+    width: 1.55rem; height: 1.55rem; border-radius: .42rem; background: #0e2439;
+    display: grid; place-items: center;
+  }
+  .notif b { font: 600 .74rem/1.3 var(--sans); display: block; }
+  .notif .body { display: block; font: .72rem/1.35 var(--sans); color: rgba(255, 255, 255, .84); }
+  .notif time { font: .62rem/1.55 var(--sans); color: rgba(255, 255, 255, .6); }
+</style>
+</head>
+<body>
+
+<div class="phone-zone">
+  <div class="phone">
+    <div class="screen">
+      <div class="island"></div>
+      <div class="lock">
+        <div class="date">Thursday, 7 August</div>
+        <div class="clock">9:41</div>
+      </div>
+      <div class="moments">
+        <div class="notif">
+          <div class="appicon"><svg width="17" height="17" viewBox="0 0 16 16"><path d="M2.3 14V6.4A2.6 2.6 0 0 1 4.9 3.8H11.1A2.6 2.6 0 0 1 13.7 6.4V14Z" fill="#4da3ff"/><path d="M4.9 14V8.4A1.8 1.8 0 0 1 6.7 6.6H9.3A1.8 1.8 0 0 1 11.1 8.4V14Z" fill="#0e2439"/><path d="M7 14V10.6A1 1 0 0 1 9 10.6V14Z" fill="#4da3ff"/></svg></div>
+          <div><b>Task W13 finished</b><span class="body">W14 is unblocked and ready to start</span></div>
+          <time>now</time>
+        </div>
+        <div class="notif">
+          <div class="appicon"><svg width="17" height="17" viewBox="0 0 16 16"><path d="M2.3 14V6.4A2.6 2.6 0 0 1 4.9 3.8H11.1A2.6 2.6 0 0 1 13.7 6.4V14Z" fill="#4da3ff"/><path d="M4.9 14V8.4A1.8 1.8 0 0 1 6.7 6.6H9.3A1.8 1.8 0 0 1 11.1 8.4V14Z" fill="#0e2439"/><path d="M7 14V10.6A1 1 0 0 1 9 10.6V14Z" fill="#4da3ff"/></svg></div>
+          <div><b>Deploy finished</b><span class="body">kukuroo.cc is live</span></div>
+          <time>25m ago</time>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="mark">kukuroo</div>
+  <h1>Self-hosted<br>web push worker,<br><span class="quiet">works on iOS.</span></h1>
+  <p class="lede">A push endpoint you own, in one Cloudflare Worker.</p>
+  <div class="chip"><span class="pmt">$ </span>npx kukuroo init my-push</div>
+</div>
+
+</body>
+</html>
