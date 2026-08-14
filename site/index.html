@@ -192,10 +192,8 @@
      the instruction rather than as a sample. */
   .term.large .term-body { font-size: 1rem; padding: 1.4rem 1.5rem; }
   .term .pmt { color: var(--azure-bright); -webkit-user-select: none; user-select: none; }
-  .term .cmt { color: #61798f; }
   .term .str { color: #7fd39a; }
   .term .out { color: #56b6e0; }
-  .term .key { color: var(--azure-bright); }
   .caption { margin-top: 1rem; color: var(--feather); max-width: 42rem; }
 
   /* The line that used to be a comment inside the block. It is the argument,
@@ -205,24 +203,10 @@
 
   .defs { max-width: 44rem; margin-bottom: 1.6rem; }
 
-  /* Two up, not three: a 300px column truncates half of every command, and
-     these blocks are the argument the section is making. */
-  .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(21rem, 1fr)); gap: 2rem 2.5rem; counter-reset: step; }
   /* Grid items refuse to shrink below their content without this, and a long
-     command line inside a step would push the whole page wider than a phone. */
-  .step, .punch, .hero > div { min-width: 0; }
-  .step { counter-increment: step; }
-  .step::before {
-    content: counter(step, decimal-leading-zero);
-    font: 700 .9rem var(--mono); color: var(--azure); display: block; margin-bottom: .5rem;
-  }
-  .step b { font: 650 1.03rem var(--sans); display: block; margin-bottom: .35rem; }
-  .step p { font-size: .95rem; color: var(--feather); }
-  /* Wrapping these would break paths and indentation mid-token, so the long
-     lines scroll inside the block instead. The block scrolls, not the page. */
-  .step .term { margin-top: .8rem; }
-  .step .term-body { font-size: .78rem; padding: .9rem 1rem; }
-  .more { margin-top: 1.8rem; font: 600 .9rem var(--mono); }
+     line inside one would push the whole page wider than a phone. */
+  .punch, .hero > div { min-width: 0; }
+  .more { margin-top: 1.4rem; font: 600 .9rem var(--mono); }
 
   .spec { list-style: none; padding: 0; display: grid; gap: .85rem; max-width: 44rem; }
   .spec li { position: relative; padding-left: 1.15rem; color: var(--feather); font-size: .98rem; }
@@ -354,59 +338,13 @@
 
   <section id="mount">
     <div class="wrap">
-      <h2>Already have a Worker? Mount it.</h2>
+      <h2>Already have a Worker running as your website?</h2>
       <p class="defs">
-        If you already run a site on Cloudflare Workers, Kukuroo mounts into the
-        router you have. Devices enroll on your hostname, which is where a
-        notification tap should land.
+        Then Kukuroo mounts into the router you already have, rather than asking
+        for a Worker of its own. Devices enroll on your hostname, which is where
+        a notification tap should land.
       </p>
-      <div class="steps">
-        <div class="step">
-          <b>Hand it your requests first</b>
-          <p><code>handle</code> returns null outside its prefix, so your own
-          routing is untouched.</p>
-          <div class="term">
-            <div class="term-bar"><span class="dots" aria-hidden="true"></span><span class="title">src/worker.ts</span></div>
-            <pre class="term-body">import { mountKukuroo } from <span class="str">"kukuroo"</span>;
-
-const kukuroo = mountKukuroo({ prefix: <span class="str">"/push"</span> });
-
-export default {
-  async fetch(request, env) {
-    const hit = await kukuroo.handle(request, env);
-    return hit ?? yourRouter(request, env);
-  },
-};</pre>
-          </div>
-        </div>
-        <div class="step">
-          <b>Bind KV, then generate the keys</b>
-          <p>The binding name is fixed; the namespace provisions on your next
-          deploy.</p>
-          <div class="term">
-            <div class="term-bar"><span class="dots" aria-hidden="true"></span><span class="title">wrangler.jsonc</span></div>
-            <pre class="term-body"><span class="key">"kv_namespaces"</span>: [{ <span class="key">"binding"</span>: <span class="str">"KUKUROO_SUBS"</span> }]
-
-<span class="cmt"># then, from that directory</span>
-<span class="pmt">$ </span>npm install kukuroo &amp;&amp; npx kukuroo init --mounted</pre>
-          </div>
-        </div>
-        <div class="step">
-          <b>Serve enrollment on your origin</b>
-          <p>Return the bundled page from a route of yours, or build your own
-          against <code>/push/subscribe</code>.</p>
-          <div class="term">
-            <div class="term-bar"><span class="dots" aria-hidden="true"></span><span class="title">src/worker.ts</span></div>
-            <pre class="term-body">import { enrollmentPage } from <span class="str">"kukuroo"</span>;
-
-return new Response(enrollmentPage({
-  subscribePath: <span class="str">"/push/subscribe"</span>,
-  publicKeyPath: <span class="str">"/push/public-key"</span>,
-}), { headers: { <span class="str">"content-type"</span>: <span class="str">"text/html"</span> } });</pre>
-          </div>
-        </div>
-      </div>
-      <p class="more"><a href="https://github.com/saiday/kukuroo#mounted">The full mounted setup, step by step &rarr;</a></p>
+      <p class="more"><a href="https://github.com/saiday/kukuroo#mounting-it-in-a-worker-you-already-run">The mounted setup, step by step &rarr;</a></p>
     </div>
   </section>
 
