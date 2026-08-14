@@ -127,6 +127,10 @@ agent-browser open http://localhost:8787/push/enroll
 - [ ] No console errors, no failed requests.
 - [ ] `site/index.html` renders at 1280 and at 390 with no horizontal overflow, and its links
       resolve.
+- [ ] `curl -sI https://kukuroo.cc/og.png` answers `content-type: image/png`. Pages serves a
+      real file ahead of the catch-all, so `text/html` here means the asset is missing and
+      every share preview is silently imageless. The card is only re-cut when the headline
+      changes; the `og:title` and `og:description` still matching the page is the check.
 
 A first deploy to a fresh `workers.dev` name is not globally consistent for a minute or two:
 colos that have not picked up the script yet answer 404, so a handful of requests fail while

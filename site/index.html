@@ -5,6 +5,30 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Kukuroo: self-hosted web push worker for iOS</title>
 <meta name="description" content="A self-hosted web push worker that works on iOS. One Cloudflare Worker, your own keys, no app to build and no notification vendor in the middle.">
+
+<!-- Pages answers every path with this one file, so /anything is a soft 404 a
+     search engine can index on its own. The canonical collapses them onto the root. -->
+<link rel="canonical" href="https://kukuroo.cc/">
+
+<!-- The share card. og:image has to be an absolute URL to a raster file: no SVG,
+     no data: URI, because a crawler fetches it in a second request rather than
+     rendering the page. Width and height let it reserve the layout on first
+     scrape instead of showing a text-only card until the image lands. -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Kukuroo">
+<meta property="og:url" content="https://kukuroo.cc/">
+<meta property="og:title" content="Kukuroo: self-hosted web push worker for iOS">
+<meta property="og:description" content="A self-hosted web push worker that works on iOS. One Cloudflare Worker, your own keys, no app to build and no notification vendor in the middle.">
+<meta property="og:image" content="https://kukuroo.cc/og.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="An iPhone lock screen with a Kukuroo notification: Task W13 finished, W14 is unblocked and ready to start.">
+<!-- The only twitter: tag worth carrying. X falls back to the og: values for
+     title, description and image, but without this it may render the small
+     thumbnail layout instead of the large one. -->
+<meta name="twitter:card" content="summary_large_image">
+
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3.4' fill='%230e2439'/%3E%3Cpath d='M2.3 14V6.4A2.6 2.6 0 0 1 4.9 3.8H11.1A2.6 2.6 0 0 1 13.7 6.4V14Z' fill='%234da3ff'/%3E%3Cpath d='M4.9 14V8.4A1.8 1.8 0 0 1 6.7 6.6H9.3A1.8 1.8 0 0 1 11.1 8.4V14Z' fill='%230e2439'/%3E%3Cpath d='M7 14V10.6A1 1 0 0 1 9 10.6V14Z' fill='%234da3ff'/%3E%3C/svg%3E">
 <style>
   :root {
