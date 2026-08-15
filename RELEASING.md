@@ -184,13 +184,24 @@ npm publish --otp=<code>        # or via a granular token, below
 Publishing with a token, without writing it into `~/.npmrc` where it outlives the release:
 
 ```sh
+tools/npm-token.sh set               # once, into the macOS login Keychain
+tools/npm-token.sh check             # confirm it authenticates before you need it
+tools/npm-token.sh run npm publish
+```
+
+The script does the same thing by hand, if you would rather not store the token at all:
+
+```sh
 RC="$(mktemp -t npmrc-publish)" && chmod 600 "$RC"
 printf '//registry.npmjs.org/:_authToken=%s\n' "$TOKEN" > "$RC"
 NPM_CONFIG_USERCONFIG="$RC" npm publish
 rm -f "$RC"
 ```
 
-- [ ] Published, and `npm view kukuroo version` reports the new number.
+- [ ] Published, and `npm view kukuroo --prefer-online version` reports the new number.
+      Without `--prefer-online` this can report the old version for a while after a
+      successful publish, from the local cache rather than the registry. `curl -sS
+      https://registry.npmjs.org/kukuroo` settles it.
 - [ ] Install it from the registry, not from the working tree, and check the things that
       only the published artifact can be wrong about: `docs/` present, every relative README
       link resolving inside `node_modules`, and the `bin` runnable.
@@ -209,4 +220,36 @@ git tag v<version> <commit> && git push origin main --tags
 
 - [ ] Tag pushed, and it names the commit the tarball was built from.
 - [ ] `npx kukuroo@latest init --help` works from a directory with no checkout.
-- [ ] If a token was used, revoke it unless you intend to keep it.
+- [ ] If a token was used, revoke it unless you intend to keep it, and drop it from the
+      Keychain with `tools/npm-token.sh rm`.
+
+## 10. The GitHub release
+
+The tag is a pointer. The release is the only place a reader is told what changed and
+whether it touches them, so write it for somebody who has the old version installed and
+wants to know whether to care.
+
+Do this after the tag is pushed. `gh release create` against a tag that does not exist
+on the remote creates one from the default branch, which is the mistake section 9 just
+took care to avoid: it would name whatever `main` is now, not the tree that was
+published.
+
+The commit range is the raw material, not the text. Read it and write prose:
+
+```sh
+git log --oneline v<previous>..v<version>
+gh release create v<version> --draft --title "v<version>" --notes-file notes.md
+gh release edit v<version> --draft=false
+```
+
+Draft first. Publishing notifies every watcher and cannot be un-sent, and the notes are
+the one artifact of a release with no test that catches a wrong claim. A draft URL comes
+back as `.../releases/tag/untagged-<hash>`, which is how GitHub addresses drafts and not
+a sign the tag was missed; it becomes `.../tag/v<version>` when published.
+
+- [ ] Notes describe what changed and what it means for somebody upgrading, in the shape
+      the earlier releases use: the substantive change first, docs and site after,
+      closing with the install line and whether anything re-enrolls or re-keys.
+- [ ] Every claim in the notes is one the diff supports. `git diff --stat
+      v<previous>..v<version>` is the check.
+- [ ] Published, pointing at `v<version>`, and showing as Latest in `gh release list`.
