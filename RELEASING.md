@@ -30,7 +30,11 @@ npm profile get                 # shows the two-factor mode
       TOTP code is only valid if the clock on the device generating it is accurate. An
       authenticator that has drifted emits codes that look fine and are rejected every time.
 - [ ] If you publish with a granular access token instead, confirm it exists, is scoped to
-      this package with write access, and has 2FA bypass enabled. Note that `npm token
+      this package with write access, has 2FA bypass enabled, and has not expired.
+      `tools/npm-token.sh check` answers all of that in one call: it prints the account the
+      stored token authenticates as, and fails if the token is missing, wrong, or past its
+      date. The one in use is a 90-day token, so expiry is the way it will fail, and it will
+      fail on a day nothing else about the release looks different. Note that `npm token
       create` cannot be used to make one, because creating a token is itself a write and
       needs the very OTP you may be unable to produce. That one is made on the website.
 
@@ -181,7 +185,8 @@ npm publish --dry-run
 npm publish --otp=<code>        # or via a granular token, below
 ```
 
-Publishing with a token, without writing it into `~/.npmrc` where it outlives the release:
+Publishing with a token. The token is meant to outlive the release. A plaintext copy of
+it sitting in `~/.npmrc` is not, which is what this avoids:
 
 ```sh
 tools/npm-token.sh set               # once, into the macOS login Keychain
@@ -220,8 +225,13 @@ git tag v<version> <commit> && git push origin main --tags
 
 - [ ] Tag pushed, and it names the commit the tarball was built from.
 - [ ] `npx kukuroo@latest init --help` works from a directory with no checkout.
-- [ ] If a token was used, revoke it unless you intend to keep it, and drop it from the
-      Keychain with `tools/npm-token.sh rm`.
+- [ ] Nothing to revoke. The token is a granular one with a 90-day expiry, kept in the
+      Keychain between releases on purpose, so the release ends without touching it.
+      What that trades away is a date: once it expires, publishing fails until a
+      replacement is made on npmjs.com and stored with `tools/npm-token.sh set`. Ask
+      `tools/npm-token.sh check` in section 1, where a dead credential still costs a
+      minute, rather than here, where everything is already built and torn down.
+      `tools/npm-token.sh rm` is for retiring the arrangement, not for ending a release.
 
 ## 10. The GitHub release
 
