@@ -24,5 +24,17 @@ export {
 export { enrollmentPage, type EnrollmentPageOptions } from "./enroll-page.ts";
 export { InvalidRequest } from "./errors.ts";
 export type { KukurooEnv } from "./env.ts";
-export type { StoredSubscription } from "./subscriptions.ts";
+// `subscriptionKey` and `KEY_PREFIX` are exported so a host can find the row for
+// one endpoint with a point read, rather than listing the namespace and
+// comparing `.endpoint` on every row it holds. Listing cannot answer the
+// question a host actually has: KV's list is eventually consistent, so a device
+// that enrolled a second ago is reported as not enrolled, and a page that acts
+// on that tells somebody their enrollment failed while the row sits in KV.
+//
+// Exporting the derivation makes it a contract. It is the key layout devices are
+// already stored under, so it was never free to change -- an altered hash
+// orphans every existing row -- and saying so here costs nothing that was not
+// already owed. The alternative is what hosts do without it, which is copy these
+// six lines and silently diverge.
+export { KEY_PREFIX, subscriptionKey, type StoredSubscription } from "./subscriptions.ts";
 export type { PushSubscriptionKeys } from "./encrypt.ts";

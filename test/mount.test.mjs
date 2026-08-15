@@ -523,4 +523,47 @@ ok("requireInvite defaults to on",
     body: JSON.stringify({ subscription: subscriptionBody() }),
   }), openEnv)).status === 403);
 
+// ---------------------------------------------------------------------------
+// The key derivation, as a public contract.
+//
+// A host that wants to know whether one endpoint is enrolled has two ways to
+// ask. Listing the namespace and comparing `.endpoint` on every row is the one
+// available without these exports, and it answers wrongly for the case that
+// matters most: KV's list is eventually consistent, so a device that enrolled a
+// second ago reads as not enrolled. A point read at this key does not have that
+// failure.
+//
+// Which is only true while this function names the key `putSubscription`
+// actually writes. Imported from the package root rather than from
+// subscriptions.ts, because "a host can reach it" is half of what is being
+// promised, and asserted against the stored key rather than a literal, so the
+// two move together or this fails.
+// ---------------------------------------------------------------------------
+{
+  const { subscriptionKey, KEY_PREFIX } = await import("../src/index.ts");
+
+  const kv = fakeKV();
+  const body = subscriptionBody();
+  const stored = await mountKukuroo({ prefix: "/push", requireInvite: false }).handle(
+    req("/push/subscribe", { method: "POST", body: JSON.stringify({ subscription: body }) }),
+    { ...env, KUKUROO_SUBS: kv },
+  );
+  ok("the package root exports the key derivation",
+    typeof subscriptionKey === "function" && KEY_PREFIX === "sub:");
+
+  const [written] = [...kv.store.keys()];
+  ok("subscribe stored exactly one row", stored.status === 200 && kv.store.size === 1);
+  ok("subscriptionKey names the row subscribe just wrote",
+    (await subscriptionKey(body.endpoint)) === written);
+  ok("and the row it names is reachable by a point read",
+    JSON.parse(await kv.get(await subscriptionKey(body.endpoint))).endpoint === body.endpoint);
+  ok("the derived key carries the prefix listing filters on",
+    (await subscriptionKey(body.endpoint)).startsWith(KEY_PREFIX));
+
+  // A different device is a different row, or the point read above would be a
+  // lookup that confidently returns somebody else's subscription.
+  ok("a different endpoint derives a different key",
+    (await subscriptionKey(body.endpoint + "x")) !== written);
+}
+
 console.error = realConsoleError;
