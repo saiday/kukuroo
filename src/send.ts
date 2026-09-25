@@ -14,14 +14,13 @@ import { deleteSubscription, listSubscriptions } from "./subscriptions.ts";
 import { importVapidKeys, signVapidToken } from "./vapid.ts";
 import type { KukurooEnv } from "./env.ts";
 
+/**
+ * There is no `topic`. Apple's push service answers any push carrying a Topic
+ * header with 400 `BadWebPushTopic`, whatever its value, and every device
+ * Kukuroo can reach is behind it. `notification.tag` is how a later
+ * notification replaces an earlier one.
+ */
 export interface SendOptions extends BuildPayloadOptions {
-  /**
-   * Web Push `Topic` header. An undelivered message is replaced by a later one
-   * carrying the same topic, so a phone that has been off does not wake to a
-   * queue of stale duplicates. Distinct from `notification.tag`, which collapses
-   * notifications that have already been *displayed*.
-   */
-  topic?: string;
   /** Seconds the push service may hold an undelivered message. Default 4 hours. */
   ttl?: number;
 }
@@ -37,9 +36,6 @@ export interface SendResult {
 
 const DEFAULT_TTL_SECONDS = 4 * 60 * 60;
 
-/** RFC 8030 §5.4: at most 32 characters from the base64url alphabet. */
-const TOPIC_PATTERN = /^[A-Za-z0-9_-]{1,32}$/;
-
 /**
  * Just under 2^31 seconds. The bound is what makes this check mean anything:
  * `Number.isInteger(1e21)` is true, and `String(1e21)` is "1e+21", so an
@@ -49,17 +45,17 @@ const TOPIC_PATTERN = /^[A-Za-z0-9_-]{1,32}$/;
 const MAX_TTL_SECONDS = 2_147_483_647;
 
 /**
- * The two header fields, checked once before the loop.
+ * The header options, checked once before the loop.
  *
  * Everything else the caller supplies is validated by buildDeclarativePayload
  * before any network call, for the reason stated there: a bad value is bad for
- * every device, and finding out after a partial fan-out is strictly worse. TTL
- * and Topic went straight into the headers instead, so a typo'd one produced a
- * rejection per subscription and an HTTP 200 carrying `delivered: 0`, which
- * reads as "it worked" everywhere except the phone.
+ * every device, and finding out after a partial fan-out is strictly worse. A
+ * header option that reached the push service wrong produced a rejection per
+ * subscription and an HTTP 200 carrying `delivered: 0`, which reads as "it
+ * worked" everywhere except the phone.
  */
 function assertHeaderOptions(options: SendOptions): void {
-  const { ttl, topic } = options;
+  const { ttl } = options;
   if (ttl !== undefined && (!Number.isInteger(ttl) || ttl < 0 || ttl > MAX_TTL_SECONDS)) {
     throw new InvalidRequest(
       `ttl must be an integer number of seconds between 0 and ${MAX_TTL_SECONDS}; got ` +
@@ -67,11 +63,11 @@ function assertHeaderOptions(options: SendOptions): void {
         `a malformed one for every subscription.`,
     );
   }
-  if (topic !== undefined && (typeof topic !== "string" || !TOPIC_PATTERN.test(topic))) {
+  if ((options as { topic?: unknown }).topic !== undefined) {
     throw new InvalidRequest(
-      `topic must be 1 to 32 characters from the base64url alphabet (A-Z a-z 0-9 - _); ` +
-        `got ${JSON.stringify(topic)}. RFC 8030 constrains it, and a push service rejects ` +
-        `a malformed one for every subscription.`,
+      `topic is not supported: Apple's push service rejects every push that carries a ` +
+        `Topic header (400 BadWebPushTopic), so no device would receive it. Use ` +
+        `notification.tag to have a later notification replace an earlier one.`,
     );
   }
 }
@@ -145,7 +141,6 @@ export async function send(env: KukurooEnv, options: SendOptions): Promise<SendR
         TTL: String(options.ttl ?? DEFAULT_TTL_SECONDS),
         Urgency: "normal",
       };
-      if (options.topic !== undefined) headers.Topic = options.topic;
 
       const response = await fetch(subscription.endpoint, {
         method: "POST",
