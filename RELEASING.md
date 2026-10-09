@@ -130,7 +130,8 @@ agent-browser open http://localhost:8787/push/enroll
 - [ ] Renders correctly at a phone viewport (390x844). This is the only viewport that matters.
 - [ ] No console errors, no failed requests.
 - [ ] Every page under `site/` (`index.html`, `about/index.html`) renders at 1280 and at 390
-      with no horizontal overflow, in light and dark, and its links resolve.
+      with no horizontal overflow, and its links resolve. `index.html` follows the system's
+      dark mode, so check it in both.
 - [ ] `curl -sI https://kukuroo.cc/og.png` answers `content-type: image/png`. Pages serves a
       real file ahead of the catch-all, so `text/html` here means the asset is missing and
       every share preview is silently imageless. The card is only re-cut when the headline

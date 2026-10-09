@@ -3,384 +3,266 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>About imnotyourson · Kukuroo</title>
+<title>imnotyourson: technology consulting for the music industry</title>
 <meta name="description" content="imnotyourson is a consulting firm founded in 2026, backed by more than 10 years of music industry experience. We bring technical solutions and ecosystem integration to indie labels and musicians.">
 <link rel="canonical" href="https://kukuroo.cc/about/">
-
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3.4' fill='%230e2439'/%3E%3Cpath d='M2.3 14V6.4A2.6 2.6 0 0 1 4.9 3.8H11.1A2.6 2.6 0 0 1 13.7 6.4V14Z' fill='%234da3ff'/%3E%3Cpath d='M4.9 14V8.4A1.8 1.8 0 0 1 6.7 6.6H9.3A1.8 1.8 0 0 1 11.1 8.4V14Z' fill='%230e2439'/%3E%3Cpath d='M7 14V10.6A1 1 0 0 1 9 10.6V14Z' fill='%234da3ff'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
 <style>
-  /* The palette and type are index.html's. A change to one belongs in both. */
+  /* This page is the company's, not Kukuroo's: black on white with a black
+     contact block, and it does not follow the system's dark mode. */
   :root {
-    --snow: #f2f6fb;
-    --ink: #0f1b2a;
-    --feather: #55677e;
-    --azure: #0b62d6;
-    --azure-bright: #4da3ff;
-    --rule: #d3dde9;
-    --mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Menlo, Consolas, monospace;
-    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
-    --sans-zh: -apple-system, BlinkMacSystemFont, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --snow: #0a1017;
-      --ink: #e4ebf4;
-      --feather: #8ba0b8;
-      --azure: #62aaff;
-      --rule: #223142;
-    }
+    color-scheme: light;
+    --paper: #ffffff;
+    --ink: #141414;
+    --body: #3d3d3d;
+    --muted: #5f5f5f;
+    --rule: #e4e4e4;
+    --night: #141414;
+    --night-muted: #a8a8a8;
+    --night-rule: #2e2e2e;
+    --night-field: #5a5a5a;
+    --sans: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   }
 
   * { box-sizing: border-box; margin: 0; }
+  html { scroll-behavior: smooth; }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
   body {
-    background: var(--snow); color: var(--ink);
+    background: var(--paper); color: var(--ink);
     font: 17px/1.6 var(--sans); -webkit-font-smoothing: antialiased;
+    /* On a screen taller than the page, the black block runs to the bottom
+       edge rather than stopping short above a strip of white. */
+    min-height: 100vh; display: flex; flex-direction: column;
   }
-  [lang="zh-Hant"] { font-family: var(--sans-zh); line-height: 1.8; }
-  [hidden] { display: none !important; }
-  a { color: var(--azure); text-decoration-thickness: 1px; text-underline-offset: 3px; }
-  a:hover { text-decoration-thickness: 2px; }
-  :focus-visible { outline: 2px solid var(--azure); outline-offset: 3px; border-radius: 2px; }
+  footer { flex: 1; display: flex; flex-direction: column; }
+  footer > .wrap { width: 100%; flex: 1; }
+  a { color: inherit; text-underline-offset: 4px; text-decoration-thickness: 1px; }
+  :focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
 
-  .wrap { max-width: 64rem; margin-inline: auto; padding-inline: 1.25rem; }
+  .wrap { max-width: 1168px; margin-inline: auto; padding-inline: 24px; }
 
-  header.wrap {
-    display: flex; align-items: center; justify-content: space-between;
-    flex-wrap: wrap; gap: .5rem 1.5rem; padding-block: 1.1rem;
+  /* ---------- hero ---------- */
+  .hero { padding-block: 120px 128px; }
+  .hero .display {
+    max-width: 21em;
+    font-size: clamp(28px, 3.5vw, 44px); line-height: 1.22; font-weight: 400;
+    letter-spacing: -.022em; text-wrap: pretty;
   }
-  .mark {
-    font: 700 1rem var(--mono); letter-spacing: .18em; text-transform: uppercase;
-    color: var(--ink); text-decoration: none;
+  .hero .sub {
+    max-width: 600px; margin-top: 40px;
+    font-size: 18px; line-height: 1.7; color: var(--body);
   }
-  .nav { display: flex; align-items: center; gap: 1.25rem; }
-  .nav a.gh { font-size: .95rem; color: var(--ink); }
-  .lang { display: flex; align-items: center; font: .85rem var(--mono); }
-  .lang button {
-    background: none; border: 0; cursor: pointer; font: inherit; color: var(--feather);
-    min-height: 44px; padding: 0 .45rem; text-underline-offset: 4px;
+  .hero .go {
+    display: inline-flex; align-items: center; gap: 10px; margin-top: 44px;
+    min-height: 48px; padding: 0 24px; background: var(--ink); color: var(--paper);
+    font-size: 15px; font-weight: 500; text-decoration: none;
   }
-  .lang button[aria-pressed="true"] { color: var(--ink); text-decoration: underline; }
-  .lang .slash { color: var(--rule); }
+  .hero .go:hover { background: #333333; }
+  .hero .go svg { transition: transform .2s ease; }
+  .hero .go:hover svg { transform: translateX(3px); }
 
-  .hero { padding-block: 3.4rem 3.6rem; }
-  h1 {
-    font: 800 clamp(1.5rem, 3.3vw, 2.4rem)/1.15 var(--mono);
-    letter-spacing: -.03em;
+  /* ---------- the label column every section hangs off ---------- */
+  .row { display: flex; flex-wrap: wrap; gap: 24px 48px; border-top: 1px solid var(--rule); }
+  .row > .label {
+    flex: 1 1 200px; font: 13px/1.9 var(--mono); color: var(--muted);
   }
-  .lede { margin-top: 1.4rem; max-width: 40rem; font-size: 1.1rem; display: grid; gap: 1.1rem; }
-  .lede p + p { color: var(--feather); }
-
-  section { padding-block: 3.2rem; border-top: 1px solid var(--rule); }
+  .row > .body { flex: 999 1 560px; min-width: 0; }
   h2 {
-    font: 700 1rem var(--mono); letter-spacing: .14em; text-transform: uppercase;
-    color: var(--feather); margin-bottom: 1.5rem;
-  }
-  .pitch { max-width: 44rem; margin-bottom: 1.8rem; font-size: 1.12rem; }
-
-  .areas { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); gap: 2.4rem 3rem; }
-  .area { min-width: 0; }
-  .area .letter { font: 600 .85rem var(--mono); color: var(--azure); }
-  .area h3 { font: 650 1.1rem/1.4 var(--sans); margin: .3rem 0 1rem; }
-  [lang="zh-Hant"] .area h3 { font-family: var(--sans-zh); }
-  .spec { list-style: none; padding: 0; display: grid; gap: .85rem; }
-  .spec li { position: relative; padding-left: 1.15rem; color: var(--feather); font-size: .98rem; }
-  .spec li::before { content: "\2014"; position: absolute; left: 0; color: var(--azure); }
-  .spec b { display: block; color: var(--ink); font-weight: 650; }
-
-  .clients { list-style: none; padding: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 1rem 3rem; }
-  .clients a { display: flex; align-items: center; min-height: 44px; opacity: .6; }
-  .clients a:hover { opacity: 1; }
-  .clients img { display: block; height: auto; }
-  /* Both marks are drawn in near-black. Inverted they read as near-white,
-     which is the only way they stay visible on the dark page. */
-  @media (prefers-color-scheme: dark) {
-    .clients img { filter: invert(1); }
+    font-size: 28px; line-height: 1.3; font-weight: 500; letter-spacing: -.015em;
   }
 
-  form { display: grid; gap: 1.6rem; max-width: 44rem; }
+  #services .row { padding-block: 56px 96px; }
+  #services h2 { margin-bottom: 40px; }
+  .areas { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 48px; }
+  .areas h3 { font-size: 20px; line-height: 1.35; font-weight: 600; margin-bottom: 20px; }
+  .areas ul { list-style: none; padding: 0; border-bottom: 1px solid var(--rule); }
+  .areas li { border-top: 1px solid var(--rule); padding-block: 20px; }
+  .areas li b { display: block; font-size: 16px; font-weight: 600; margin-bottom: 4px; }
+  .areas li p { font-size: 15px; color: #4a4a4a; }
+
+  #clients .row { padding-block: 40px 64px; align-items: center; }
+  .clients { list-style: none; padding: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 16px 56px; }
+  .clients a { display: flex; align-items: center; min-height: 56px; opacity: .55; transition: opacity .2s ease; }
+  .clients a:hover, .clients a:focus-visible { opacity: 1; }
+  .clients img { display: block; }
+
+  /* ---------- contact: the black block ---------- */
+  footer { background: var(--night); color: #ffffff; }
+  footer .row { border-top: 0; padding-block: 96px 104px; }
+  footer .row > .label { color: var(--night-muted); }
+  footer h2 { font-size: clamp(28px, 3.6vw, 40px); line-height: 1.2; letter-spacing: -.02em; margin-bottom: 40px; }
+
+  form { display: grid; gap: 28px; max-width: 720px; }
   fieldset { border: 0; padding: 0; }
-  legend, label { font: .85rem var(--mono); color: var(--feather); }
-  [lang="zh-Hant"] legend, [lang="zh-Hant"] label { font-family: var(--sans-zh); }
-  legend { padding: 0; margin-bottom: .7rem; }
-  .chips { display: flex; flex-wrap: wrap; gap: .5rem; }
+  legend, label.field-label { font: 13px var(--mono); color: var(--night-muted); }
+  legend { padding: 0; margin-bottom: 12px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
   .chips label { position: relative; }
   /* The radio stays in the page, unseen, so the arrow keys and a screen
      reader still treat the chips as one choice. */
-  .chips input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+  .chips input { position: absolute; inset: 0; margin: 0; opacity: 0; cursor: pointer; }
   .chips span {
-    display: inline-flex; align-items: center; min-height: 44px; padding: 0 1.05rem;
-    border: 1.5px solid var(--rule); border-radius: .45rem;
-    font: 600 .9rem var(--mono); color: var(--ink);
+    display: inline-flex; align-items: center; min-height: 44px; padding: 0 18px;
+    border: 1px solid var(--night-field); font-size: 15px; color: #ffffff;
+    transition: border-color .15s ease;
   }
-  [lang="zh-Hant"] .chips span { font-family: var(--sans-zh); }
-  .chips input:hover + span { border-color: var(--azure); }
-  .chips input:checked + span { background: var(--azure); border-color: var(--azure); color: #ffffff; }
-  .chips input:focus-visible + span { outline: 2px solid var(--azure); outline-offset: 3px; }
-  .fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr)); gap: 1.6rem 2rem; }
-  .field { display: grid; gap: .4rem; }
-  /* The underline is the only edge a field has, so it takes the secondary
-     text colour rather than the rule: the rule is too faint to find. */
+  .chips input:hover + span { border-color: #ffffff; }
+  .chips input:checked + span { background: #ffffff; border-color: #ffffff; color: var(--night); }
+  .chips input:focus-visible + span { outline: 2px solid #ffffff; outline-offset: 3px; }
+  .fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 28px 32px; }
+  .field { display: grid; gap: 8px; }
   input[type="text"], textarea {
-    width: 100%; min-height: 44px; padding: .35rem 0; border: 0; border-bottom: 1px solid var(--feather);
-    border-radius: 0; background: transparent; color: var(--ink); font: inherit; font-size: 1rem;
+    width: 100%; min-height: 44px; padding: 8px 0; border: 0; border-bottom: 1px solid var(--night-field);
+    border-radius: 0; background: transparent; color: #ffffff; font: inherit; font-size: 16px;
   }
   textarea { resize: vertical; }
-  input[type="text"]:focus, textarea:focus { outline: none; border-bottom: 2px solid var(--azure); }
-  .send { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem 1.6rem; }
-  .btn {
-    display: inline-block; padding: .7rem 1.15rem; border-radius: .45rem; border: 0; cursor: pointer;
-    font: 600 .95rem var(--mono); text-decoration: none;
+  input[type="text"]:focus, textarea:focus { outline: none; border-bottom-color: #ffffff; box-shadow: 0 1px 0 #ffffff; }
+  .send { display: flex; flex-wrap: wrap; align-items: center; gap: 16px 28px; }
+  .send button {
+    display: inline-flex; align-items: center; gap: 10px; min-height: 48px; padding: 0 24px;
+    border: 0; background: #ffffff; color: var(--night); cursor: pointer;
+    font: inherit; font-size: 15px; font-weight: 500;
   }
-  .btn.solid { background: var(--azure); color: #ffffff; }
-  .btn.solid:hover { background: #0a53b4; }
-  @media (prefers-color-scheme: dark) {
-    .btn.solid { color: #07131f; }
-    .btn.solid:hover { background: var(--azure-bright); }
-    .chips input:checked + span { color: #07131f; }
-  }
-  .send .note { font-size: .92rem; color: var(--feather); }
+  .send button:hover { background: #e4e4e4; }
+  .send .note { font-size: 14px; color: var(--night-muted); }
+  .send .note a { color: #ffffff; }
 
-  footer {
-    border-top: 1px solid var(--rule); padding-block: 2.2rem 3.2rem;
-    color: var(--feather); font-size: .95rem;
+  .legal { border-top: 1px solid var(--night-rule); }
+  .legal .wrap {
+    padding-block: 24px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 24px;
+    font: 13px var(--mono); color: var(--night-muted);
   }
-  footer .wrap { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .5rem 1.5rem; }
+  .legal a { color: var(--night-muted); text-decoration: none; }
+  .legal a:hover { color: #ffffff; }
+
+  @media (max-width: 640px) {
+    .hero { padding-block: 72px 80px; }
+    .hero .sub { margin-top: 28px; font-size: 17px; }
+    #services .row { padding-block: 48px 72px; }
+    footer .row { padding-block: 72px 80px; }
+  }
 </style>
 </head>
 <body>
 
-<header class="wrap">
-  <a class="mark" href="/">kukuroo</a>
-  <div class="nav">
-    <!-- Hidden until the script below can make it do something. -->
-    <div class="lang" role="group" aria-label="Language" hidden>
-      <button type="button" data-lang="en" aria-pressed="true">EN</button>
-      <span class="slash" aria-hidden="true">/</span>
-      <button type="button" data-lang="zh-Hant" lang="zh-Hant" aria-pressed="false">中文</button>
-    </div>
-    <a class="gh" href="https://github.com/saiday/kukuroo">GitHub</a>
-  </div>
-</header>
+<main>
+  <section class="hero wrap">
+    <p class="display">The music industry runs on conventions of its own, with
+    complex legal and rights questions behind every release.</p>
+    <p class="sub">Administrative work that once took whole teams now needs only
+    a few people who truly understand how your industry works, with the right
+    tools in hand. imnotyourson is a consulting firm founded in 2026, backed by
+    more than 10 years of music industry experience. We bring technical
+    solutions and ecosystem integration to indie labels and musicians.</p>
+    <a class="go" href="#contact">Start a conversation<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+  </section>
 
-<main data-lang="en">
-  <div class="hero wrap">
-    <h1>imnotyourson</h1>
-    <div class="lede">
-      <p>The music industry runs on conventions of its own, with complex legal
-      and rights questions behind every release. Administrative work that once
-      took whole teams now needs only a few people who truly understand how your
-      industry works, with the right tools in hand.</p>
-      <p>imnotyourson is a consulting firm founded in 2026, backed by more than
-      10 years of music industry experience. We bring technical solutions and
-      ecosystem integration to indie labels and musicians.</p>
-    </div>
-  </div>
-
-  <section id="services">
-    <div class="wrap">
-      <h2>Services</h2>
-      <p class="pitch">Two areas of work.</p>
-      <div class="areas">
-        <div class="area">
-          <div class="letter">A</div>
-          <h3>AI transformation for the industry</h3>
-          <ul class="spec">
-            <li><b>Revenue split workflows</b>Royalty splits after release,
-            performance fees and management splits for live shows, all
-            calculated and tracked in clear workflows.</li>
-            <li><b>AI-generated song detection</b>Identify AI-generated tracks
-            in submissions and catalogs.</li>
-          </ul>
-        </div>
-        <div class="area">
-          <div class="letter">B</div>
-          <h3>Tools for independent labels and musicians</h3>
-          <ul class="spec">
-            <li><b>Website, app and notifications</b>E-commerce and fan tiers
-            built in, reaching fans through web, app and notification
-            channels.</li>
-            <li><b>Digital distribution</b>Release to all music platforms, with
-            clear reports.</li>
-          </ul>
+  <section id="services" class="wrap">
+    <div class="row">
+      <div class="label">01 / Services</div>
+      <div class="body">
+        <h2>Two areas of work.</h2>
+        <div class="areas">
+          <div>
+            <h3>AI transformation for the industry</h3>
+            <ul>
+              <li><b>Revenue split workflows</b><p>Royalty splits after release,
+              performance fees and management splits for live shows, all
+              calculated and tracked in clear workflows.</p></li>
+              <li><b>AI-generated song detection</b><p>Identify AI-generated
+              tracks in submissions and catalogs.</p></li>
+            </ul>
+          </div>
+          <div>
+            <h3>Tools for independent labels and musicians</h3>
+            <ul>
+              <li><b>Website, app and notifications</b><p>E-commerce and fan
+              tiers built in, reaching fans through web, app and notification
+              channels.</p></li>
+              <li><b>Digital distribution</b><p>Release to all music platforms,
+              with clear reports.</p></li>
+            </ul>
+          </div>
         </div>
       </div>
     </div>
   </section>
 
-  <section id="clients">
-    <div class="wrap">
-      <h2>Clients</h2>
-      <ul class="clients">
-        <li><a href="https://streetvoice.com/" target="_blank" rel="noopener" aria-label="StreetVoice (opens in a new tab)"><img src="/about/streetvoice.svg" alt="StreetVoice" width="128" height="16"></a></li>
-        <li><a href="https://truecolor.mu/" target="_blank" rel="noopener" aria-label="True Color Music (opens in a new tab)"><img src="/about/truecolor.svg" alt="True Color Music" width="26" height="36"></a></li>
-      </ul>
-    </div>
-  </section>
-
-  <section id="contact">
-    <div class="wrap">
-      <h2>Contact</h2>
-      <p class="pitch">Start a conversation.</p>
-      <form class="inquire" action="mailto:contact@kukuroo.cc" method="post" enctype="text/plain">
-        <fieldset>
-          <legend>Inquiry</legend>
-          <div class="chips">
-            <label><input type="radio" name="inquiry" value="Technical support" checked><span>Technical support</span></label>
-            <label><input type="radio" name="inquiry" value="Partnership"><span>Partnership</span></label>
-            <label><input type="radio" name="inquiry" value="Other"><span>Other</span></label>
-          </div>
-        </fieldset>
-        <div class="fields">
-          <div class="field">
-            <label for="en-name">Name</label>
-            <input id="en-name" name="name" type="text" autocomplete="name" required>
-          </div>
-          <div class="field">
-            <label for="en-org">Label or organization (optional)</label>
-            <input id="en-org" name="organization" type="text" autocomplete="organization">
-          </div>
-        </div>
-        <div class="field">
-          <label for="en-message">Message</label>
-          <textarea id="en-message" name="message" rows="4" required></textarea>
-        </div>
-        <div class="send">
-          <button class="btn solid" type="submit">Send &rarr;</button>
-          <span class="note">Opens in your mail app. Or email
-          <a href="mailto:contact@kukuroo.cc">contact@kukuroo.cc</a></span>
-        </div>
-      </form>
-    </div>
-  </section>
-</main>
-
-<main data-lang="zh-Hant" lang="zh-Hant" hidden>
-  <div class="hero wrap">
-    <h1 lang="en">imnotyourson</h1>
-    <div class="lede">
-      <p>音樂產業有自己的慣例，每一次發行背後都有複雜的法務與版權問題。過去需要大量人力的行政工作，現在只需要幾位真正理解產業流程、手上有合適工具的人。</p>
-      <p>imnotyourson 是成立於 2026 年的顧問公司，擁有超過 10 年的音樂產業經驗，為獨立音樂廠牌及音樂人提供技術解決方案與生態系整合。</p>
-    </div>
-  </div>
-
-  <section>
-    <div class="wrap">
-      <h2>服務</h2>
-      <p class="pitch">兩個服務領域。</p>
-      <div class="areas">
-        <div class="area">
-          <div class="letter">A</div>
-          <h3>產業 AI 轉型</h3>
-          <ul class="spec">
-            <li><b>拆帳流程</b>發行後的版權拆帳，以及演出的演出費與經紀拆帳，都以清楚的流程計算與追蹤。</li>
-            <li><b>AI 生成歌曲偵測</b>辨識投稿與曲庫中的 AI 生成歌曲。</li>
-          </ul>
-        </div>
-        <div class="area">
-          <div class="letter">B</div>
-          <h3>獨立廠牌及音樂人工具</h3>
-          <ul class="spec">
-            <li><b>網站、App 及通知管道</b>整合電商與樂迷分級，透過網站、App 與通知管道直接觸及樂迷。</li>
-            <li><b>數位發行</b>一次上架到所有音樂平台，並提供清楚的報表。</li>
-          </ul>
-        </div>
+  <section id="clients" class="wrap">
+    <div class="row">
+      <div class="label">02 / Clients</div>
+      <div class="body">
+        <ul class="clients">
+          <li><a href="https://streetvoice.com/" target="_blank" rel="noopener" aria-label="StreetVoice (opens in a new tab)"><img src="/about/streetvoice.svg" alt="StreetVoice" width="148" height="18"></a></li>
+          <li><a href="https://truecolor.mu/" target="_blank" rel="noopener" aria-label="True Color Music (opens in a new tab)"><img src="/about/truecolor.svg" alt="True Color Music" width="40" height="56"></a></li>
+        </ul>
       </div>
     </div>
   </section>
-
-  <section>
-    <div class="wrap">
-      <h2>客戶</h2>
-      <ul class="clients">
-        <li><a href="https://streetvoice.com/" target="_blank" rel="noopener" aria-label="StreetVoice 街聲（另開分頁）"><img src="/about/streetvoice.svg" alt="StreetVoice 街聲" width="128" height="16"></a></li>
-        <li><a href="https://truecolor.mu/" target="_blank" rel="noopener" aria-label="本色音樂（另開分頁）"><img src="/about/truecolor.svg" alt="本色音樂" width="26" height="36"></a></li>
-      </ul>
-    </div>
-  </section>
-
-  <section>
-    <div class="wrap">
-      <h2>聯絡</h2>
-      <p class="pitch">開始對話。</p>
-      <form class="inquire" action="mailto:contact@kukuroo.cc" method="post" enctype="text/plain">
-        <fieldset>
-          <legend>諮詢類別</legend>
-          <div class="chips">
-            <label><input type="radio" name="inquiry" value="技術支援" checked><span>技術支援</span></label>
-            <label><input type="radio" name="inquiry" value="合作機會"><span>合作機會</span></label>
-            <label><input type="radio" name="inquiry" value="其他"><span>其他</span></label>
-          </div>
-        </fieldset>
-        <div class="fields">
-          <div class="field">
-            <label for="zh-name">姓名</label>
-            <input id="zh-name" name="name" type="text" autocomplete="name" required>
-          </div>
-          <div class="field">
-            <label for="zh-org">廠牌或公司（選填）</label>
-            <input id="zh-org" name="organization" type="text" autocomplete="organization">
-          </div>
-        </div>
-        <div class="field">
-          <label for="zh-message">訊息</label>
-          <textarea id="zh-message" name="message" rows="4" required></textarea>
-        </div>
-        <div class="send">
-          <button class="btn solid" type="submit">送出 &rarr;</button>
-          <span class="note">會在你的郵件程式中開啟。或直接來信
-          <a href="mailto:contact@kukuroo.cc" lang="en">contact@kukuroo.cc</a></span>
-        </div>
-      </form>
-    </div>
-  </section>
 </main>
 
-<footer>
+<footer id="contact">
   <div class="wrap">
-    <span>&copy; 2026 imnotyourson</span>
-    <a href="mailto:contact@kukuroo.cc">contact@kukuroo.cc</a>
+    <div class="row">
+      <div class="label">03 / Contact</div>
+      <div class="body">
+        <h2>Start a conversation.</h2>
+        <form class="inquire" action="mailto:contact@kukuroo.cc" method="post" enctype="text/plain">
+          <fieldset>
+            <legend>Inquiry</legend>
+            <div class="chips">
+              <label><input type="radio" name="inquiry" value="Technical support" checked><span>Technical support</span></label>
+              <label><input type="radio" name="inquiry" value="Partnership"><span>Partnership</span></label>
+              <label><input type="radio" name="inquiry" value="Other"><span>Other</span></label>
+            </div>
+          </fieldset>
+          <div class="fields">
+            <div class="field">
+              <label class="field-label" for="name">Name</label>
+              <input id="name" name="name" type="text" autocomplete="name" required>
+            </div>
+            <div class="field">
+              <label class="field-label" for="org">Label or organization (optional)</label>
+              <input id="org" name="organization" type="text" autocomplete="organization">
+            </div>
+          </div>
+          <div class="field">
+            <label class="field-label" for="message">Message</label>
+            <textarea id="message" name="message" rows="4" required></textarea>
+          </div>
+          <div class="send">
+            <button type="submit">Send<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
+            <span class="note">Opens in your mail app. Or email
+            <a href="mailto:contact@kukuroo.cc">contact@kukuroo.cc</a></span>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+  <div class="legal">
+    <div class="wrap">
+      <span>&copy; 2026 kukuroo</span>
+      <a href="mailto:contact@kukuroo.cc">contact@kukuroo.cc</a>
+    </div>
   </div>
 </footer>
 
 <script>
-  // The language is the visitor's browser's until they pick one here.
-  var titles = { "en": "About imnotyourson · Kukuroo", "zh-Hant": "關於 imnotyourson · Kukuroo" };
-  var toggle = document.querySelector(".lang");
-
-  function show(lang) {
-    document.documentElement.lang = lang;
-    document.title = titles[lang];
-    document.querySelectorAll("main[data-lang]").forEach(function (m) {
-      m.hidden = m.dataset.lang !== lang;
-    });
-    toggle.querySelectorAll("button").forEach(function (b) {
-      b.setAttribute("aria-pressed", String(b.dataset.lang === lang));
-    });
-  }
-
-  var saved = null;
-  try { saved = localStorage.getItem("lang"); } catch (e) {}
-  show(titles[saved] ? saved : /^zh/i.test(navigator.language || "") ? "zh-Hant" : "en");
-  toggle.hidden = false;
-  toggle.addEventListener("click", function (e) {
-    var b = e.target.closest("button[data-lang]");
-    if (!b) return;
-    show(b.dataset.lang);
-    try { localStorage.setItem("lang", b.dataset.lang); } catch (e) {}
-  });
-
   // There is no server behind this form. Send composes the mail in the
   // visitor's own mail app, so the reply goes to the address they write from.
-  document.querySelectorAll("form.inquire").forEach(function (form) {
-    form.addEventListener("submit", function (e) {
-      e.preventDefault();
-      var f = form.elements;
-      var org = f.organization.value.trim();
-      var subject = f.inquiry.value + ": " + f.name.value.trim() + (org ? " (" + org + ")" : "");
-      var body = f.message.value.trim() + "\n\n" + f.name.value.trim() + (org ? "\n" + org : "");
-      location.href = "mailto:contact@kukuroo.cc?subject=" + encodeURIComponent(subject) +
-        "&body=" + encodeURIComponent(body);
-    });
+  document.querySelector("form.inquire").addEventListener("submit", function (e) {
+    e.preventDefault();
+    var f = e.target.elements;
+    var name = f.name.value.trim();
+    var org = f.organization.value.trim();
+    var subject = f.inquiry.value + ": " + name + (org ? " (" + org + ")" : "");
+    var body = f.message.value.trim() + "\n\n" + name + (org ? "\n" + org : "");
+    location.href = "mailto:contact@kukuroo.cc?subject=" + encodeURIComponent(subject) +
+      "&body=" + encodeURIComponent(body);
   });
 </script>
 </body>
