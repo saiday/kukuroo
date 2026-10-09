@@ -47,10 +47,14 @@
 
   /* ---------- hero ---------- */
   .hero { padding-block: 120px 128px; }
+  .hero h1 {
+    font-size: clamp(28px, 3.5vw, 44px); line-height: 1.2; font-weight: 500;
+    letter-spacing: -.022em;
+  }
   .hero .display {
-    max-width: 21em;
-    font-size: clamp(28px, 3.5vw, 44px); line-height: 1.22; font-weight: 400;
-    letter-spacing: -.022em; text-wrap: pretty;
+    max-width: 26em; margin-top: 16px;
+    font-size: clamp(22px, 2.5vw, 30px); line-height: 1.3; font-weight: 400;
+    letter-spacing: -.015em; text-wrap: pretty;
   }
   .hero .sub {
     max-width: 600px; margin-top: 40px;
@@ -151,6 +155,7 @@
 
 <main>
   <section class="hero wrap">
+    <h1>We already know:</h1>
     <p class="display">The music industry runs on conventions of its own, with
     intricate legal and rights matters behind every release.</p>
     <p class="sub">Administrative work that once took whole teams now takes a
