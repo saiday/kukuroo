@@ -72,7 +72,7 @@
   /* ---------- the label column every section hangs off ---------- */
   .row { display: flex; flex-wrap: wrap; gap: 24px 48px; border-top: 1px solid var(--rule); }
   .row > .label {
-    flex: 1 1 200px; font: 13px/1.9 var(--mono); color: var(--muted);
+    flex: 1 1 200px; font: 13px/1.9 var(--mono); letter-spacing: normal; color: var(--muted);
   }
   .row > .body { flex: 999 1 560px; min-width: 0; }
   h2 {
@@ -80,7 +80,6 @@
   }
 
   #services .row { padding-block: 56px 96px; }
-  #services h2 { margin-bottom: 40px; }
   .areas { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 48px; }
   .areas h3 { font-size: 20px; line-height: 1.35; font-weight: 600; margin-bottom: 20px; }
   .areas ul { list-style: none; padding: 0; border-bottom: 1px solid var(--rule); }
@@ -168,9 +167,8 @@
 
   <section id="services" class="wrap">
     <div class="row">
-      <div class="label">01 / Services</div>
+      <h2 class="label">01 / Services</h2>
       <div class="body">
-        <h2>Two areas of work.</h2>
         <div class="areas">
           <div>
             <h3>For the industry</h3>
@@ -219,7 +217,7 @@
           <fieldset>
             <legend>Inquiry</legend>
             <div class="chips">
-              <label><input type="radio" name="inquiry" value="Technical solutions" checked><span>Technical solutions</span></label>
+              <label><input type="radio" name="inquiry" value="Solutions" checked><span>Solutions</span></label>
               <label><input type="radio" name="inquiry" value="Partnership"><span>Partnership</span></label>
               <label><input type="radio" name="inquiry" value="Other"><span>Other</span></label>
             </div>
