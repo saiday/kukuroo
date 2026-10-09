@@ -129,8 +129,8 @@ agent-browser open http://localhost:8787/push/enroll
       (iOS 18.4+, macOS Safari 18.5+). It must refuse honestly rather than half-work.
 - [ ] Renders correctly at a phone viewport (390x844). This is the only viewport that matters.
 - [ ] No console errors, no failed requests.
-- [ ] `site/index.html` renders at 1280 and at 390 with no horizontal overflow, and its links
-      resolve.
+- [ ] Every page under `site/` (`index.html`, `about/index.html`) renders at 1280 and at 390
+      with no horizontal overflow, in light and dark, and its links resolve.
 - [ ] `curl -sI https://kukuroo.cc/og.png` answers `content-type: image/png`. Pages serves a
       real file ahead of the catch-all, so `text/html` here means the asset is missing and
       every share preview is silently imageless. The card is only re-cut when the headline
