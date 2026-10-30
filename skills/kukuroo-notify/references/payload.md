@@ -25,7 +25,6 @@ content-type: application/json
   },
   "appBadge": 1,                 // non-negative integer, sets the Home Screen badge
   "mutable":  false,             // only if a service worker must replace the notification
-  "topic":    "optional",        // push-service Topic header: coalesces undelivered messages
   "ttl":      14400              // seconds, default 4 hours
 }
 ```

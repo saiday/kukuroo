@@ -221,9 +221,10 @@ ok("a malformed ttl is one 400, not a 200 carrying delivered: 0",
 const badTopic = await kukuroo.handle(req("/push/send", {
   method: "POST",
   headers: { authorization: "Bearer token-token-token" },
-  body: JSON.stringify({ topic: "x".repeat(33), notification: { title: "hi", navigate: "https://push.example.com/" } }),
+  body: JSON.stringify({ topic: "daily", notification: { title: "hi", navigate: "https://push.example.com/" } }),
 }), env);
-ok("a malformed topic is refused the same way", badTopic.status === 400);
+ok("any topic is a 400: Apple refuses every push with a Topic header",
+  badTopic.status === 400 && (await badTopic.json()).error.includes("BadWebPushTopic"));
 
 // ---- notification members WebKit type-checks --------------------------------
 // A type mismatch makes WebKit discard the whole payload and display nothing,
